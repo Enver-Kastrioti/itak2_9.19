@@ -254,25 +254,26 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             print("jsonbuild模块使用文件传递方式")
         
         # 步骤2: 运行specpfam模块
+                # 步骤2: 运行specpfam模块
         print("\n步骤2: 运行specpfam模块...")
-        specpfam_success = run_specpfam_module(str(hmmscan_file), result_dir, debug=debug)
+        specpfam_result = run_specpfam_module(str(hmmscan_file), result_dir, debug=debug)
+        
+        # 处理specpfam模块的返回结果
+        if isinstance(specpfam_result, tuple):
+            specpfam_success, spec_data = specpfam_result
+        else:
+            # 兼容旧的返回格式
+            specpfam_success = specpfam_result
+            spec_data = None
+            
         if not specpfam_success:
             print("specpfam模块运行失败")
             return False
-        
-        # 获取spec数据（如果在debug模式下）
-        spec_data = None
-        if debug:
-            try:
-                pfamspec_file = result_dir / "pfamspec.json"
-                if pfamspec_file.exists():
-                    with open(pfamspec_file, 'r') as f:
-                        spec_data = json.load(f)
-                    print("成功加载spec数据到内存")
-                else:
-                    print("pfamspec.json文件不存在，无法加载spec数据")
-            except Exception as e:
-                print(f"加载spec数据失败: {e}")
+            
+        if spec_data is not None:
+            print("成功获取spec数据用于分类")
+        else:
+            print("未获取到spec数据，将仅使用IPR数据进行分类")
         
         # 步骤3: 运行class_tf模块（支持内存数据传递）
         print("\n步骤3: 运行class_tf模块...")
@@ -418,7 +419,7 @@ def run_specpfam_module(hmmscan_file, result_dir, debug=False):
             print("selfbuild_hmm模块处理完成（debug模式关闭，未保存pfamspec.json）")
         
         print("selfbuild_hmm模块运行成功")
-        return True
+        return True, result  # 返回成功状态和解析结果
             
     except Exception as e:
         print(f"运行selfbuild_hmm模块时出错: {e}")
