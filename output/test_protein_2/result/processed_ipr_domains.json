@@ -1,0 +1,869 @@
+{
+  "result": {
+    "match": [
+      {
+        "lcl|CP002684.1_cds_ANM60620.1_2367|frame=+1": [
+          {
+            "sequence": "MNSFSHVPPGFRFHPTDEELVDYYLRKKVASKRIEIDFIKDIDLYKIEPWDLQELCKIGHEEQSDWYFFSHKDKKYPTGTRTNRATKAGFWKATGRDKAIYLRHSLIGMRKTLVFYKGRAPNGQKSDWIMHEYRLETDENGTPQEEGWVVCRVFKKRLAAVRRMGDYDSSPSHWYDDQLSFMASELETNGQRRILPNHHQQQQHEHQQHMPYGLNASAYALNNPNLQCKQELELHYNHLQSNIAHEEQLNQGNQNFSSLYMNSGNEQVMDQVTDWRVLDKFVASQLSNEEAATASASIQNNAKDTSNAEYQVDEEKDPKRASDMGEEYTASTSSSCQIDLWK"
+          },
+          {
+            "IPR003441": [
+              {
+                "accession": "PF02365",
+                "library": "PFAM",
+                "start": 8,
+                "end": 135,
+                "evalue": 1.9e-44,
+                "score": 162.5
+              },
+              {
+                "accession": "PS51005",
+                "library": "PROSITE_PROFILES",
+                "start": 7,
+                "end": 156,
+                "evalue": true,
+                "score": 59.170567
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT5G11510.1": [
+          {
+            "sequence": "MEAESSTPQERIPKLRHGRTSGPARRSTRGQWTAEEDEILRKAVHSFKGKNWKKIAEYFKDRTDVQCLHRWQKVLNPELVKGPWTKEEDEMIVQLIEKYGPKKWSTIARFLPGRIGKQCRERWHNHLNPAINKEAWTQEEELLLIRAHQIYGNRWAELTKFLPGRSDNGIKNHWHSSVKKKLDSYMSSGLLDQYQAMPLAPYERSSTLQSTFMQSNIDGNGCLNGQAENEIDSRQNSSMVGCSLSARDFQNGTINIGHDFHPCGNSQENEQTAYHSEQFYYPELEDISVSISEVSYDMEDCSQFPDHNVSTSPSQDYQFDFQELSDISLEMRHNMSEIPMPYTKESKESTLGAPNSTLNIDVATYTNSANVLTPETECCRVLFPDQESEGHSVSRSLTQEPNEFNQVDRRDPILYSSASDRQISEATKSPTQSSSSRFTATAASGKGTLRPAPLIISPDKYSKKSSGLICHPFEVEPKCTTNGNGSFICIGDPSSSTCVDEGTNNSSEEDQSYHVNDPKKLVPVNDFASLAEDRPHSLPKHEPNMTNEQHHEDMGASSSLGFPSFDLPVFNCDLLQSKNDPLHDYSPLGIRKLLMSTMTCMSPLRLWESPTGKKTLVGAQSILRKRTRDLLTPLSEKRSDKKLEIDIAASLAKDFSRLDVMFDETENRQSNFGNSTGVIHGDRENHFHILNGDGEEWSGKPSSLFSHRMPEETMHIRKSLEKVDQICMEANVREKDDSEQDVENVEFFSGILSEHNTGKPVLSTPGQSVTKAEKAQVSTPRNQLQRTLMATSNKEHHSPSSVCLVINSPSRARNKEGHLVDNGTSNENFSIFCGTPFRRGLESPSAWKSPFYINSLLPSPRFDTDLTIEDMGYIFSPGERSYESIGVMTQINEHTSAFAAFADAMEVSISPTNDDARQKKELDKENNDPLLAERRVLDFNDCESPIKATEEVSSYLLKGCR"
+          },
+          {
+            "IPR001005&3": [
+              {
+                "accession": "PS50090",
+                "library": "PROSITE_PROFILES",
+                "start": 24,
+                "end": 75,
+                "evalue": true,
+                "score": 10.893839
+              },
+              {
+                "accession": "PS50090",
+                "library": "PROSITE_PROFILES",
+                "start": 76,
+                "end": 127,
+                "evalue": "null",
+                "score": 13.820164
+              },
+              {
+                "accession": "PS50090",
+                "library": "PROSITE_PROFILES",
+                "start": 128,
+                "end": 178,
+                "evalue": "null",
+                "score": 10.231933
+              },
+              {
+                "accession": "cd00167",
+                "library": "CDD",
+                "start": 32,
+                "end": 75,
+                "evalue": 2.99111e-17,
+                "score": 67.2154
+              },
+              {
+                "accession": "cd00167",
+                "library": "CDD",
+                "start": 83,
+                "end": 127,
+                "evalue": 3.40183e-20,
+                "score": 75.6898
+              },
+              {
+                "accession": "cd00167",
+                "library": "CDD",
+                "start": 135,
+                "end": 175,
+                "evalue": 1.11661e-13,
+                "score": 57.2002
+              },
+              {
+                "accession": "SM00717",
+                "library": "SMART",
+                "start": 28,
+                "end": 77,
+                "evalue": 1.2e-15,
+                "score": 68.0
+              },
+              {
+                "accession": "SM00717",
+                "library": "SMART",
+                "start": 80,
+                "end": 129,
+                "evalue": 3.5e-19,
+                "score": 79.7
+              },
+              {
+                "accession": "SM00717",
+                "library": "SMART",
+                "start": 132,
+                "end": 180,
+                "evalue": 1.4e-13,
+                "score": 61.1
+              },
+              {
+                "accession": "PF00249",
+                "library": "PFAM",
+                "start": 29,
+                "end": 75,
+                "evalue": 2.1e-12,
+                "score": 58.2
+              },
+              {
+                "accession": "PF00249",
+                "library": "PFAM",
+                "start": 81,
+                "end": 127,
+                "evalue": 6.1e-16,
+                "score": 69.6
+              },
+              {
+                "accession": "PF00249",
+                "library": "PFAM",
+                "start": 133,
+                "end": 175,
+                "evalue": 5.7e-11,
+                "score": 53.7
+              }
+            ],
+            "IPR001005&2": [],
+            "IPR001005": [],
+            "IPR017930&3": [
+              {
+                "accession": "PS51294",
+                "library": "PROSITE_PROFILES",
+                "start": 29,
+                "end": 75,
+                "evalue": "null",
+                "score": 21.500666
+              },
+              {
+                "accession": "PS51294",
+                "library": "PROSITE_PROFILES",
+                "start": 76,
+                "end": 131,
+                "evalue": true,
+                "score": 32.609085
+              },
+              {
+                "accession": "PS51294",
+                "library": "PROSITE_PROFILES",
+                "start": 132,
+                "end": 182,
+                "evalue": true,
+                "score": 20.332691
+              }
+            ],
+            "IPR017930&2": [],
+            "IPR017930": []
+          }
+        ]
+      },
+      {
+        "lcl|CP002688.1_cds_ANM70663.1_44919|frame=+1": [
+          {
+            "sequence": "MDWNFKLSSGYLSGFDQEPDLSPMDGSISFGGSSQSKADFSFDLKLGRNIGNSSSVFGDTEQVISLSKWKDSALAKPEGSRSSSSKRTRGNGVGTNQMPICLVDGCDSDFSNCREYHKRHKVCDVHSKTPVVTINGHKQRFCQQCSRFHALEEFDEGKRSCRKRLDGHNRRRRKPQPEHIGRPANFFTGFQGSKLLEFSGGSHVFPTTSVLNPSWGNSLVSVAVAANGSSYGQSQSYVVGSSPAKTGIMFPISSSPNSTRSIAKQFPFLQEEESSRTASLCERMTSCIHDSDCALSLLSSSSSSVPHLLQPPLSLSQEAVETVFYGSGLFENASAVSDGSVISGNEAVRLPQTFPFHWE"
+          },
+          {
+            "IPR004333": [
+              {
+                "accession": "PS51141",
+                "library": "PROSITE_PROFILES",
+                "start": 98,
+                "end": 175,
+                "evalue": true,
+                "score": 31.914885
+              },
+              {
+                "accession": "PF03110",
+                "library": "PFAM",
+                "start": 101,
+                "end": 174,
+                "evalue": 1.9e-27,
+                "score": 106.7
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT3G13445.1": [
+          {
+            "sequence": "MTDQGLEGSNPVDLSKHPSGIVPTLQNIVSTVNLDCKLDLKAIALQARNAEYNPKRFAAVIMRIREPKTTALIFASGKMVCTGAKSEDFSKMAARKYARIVQKLGFPAKFKDFKIQNIVGSCDVKFPIRLEGLAYSHAAFSSYEPELFPGLIYRMKVPKIVLLIFVSGKIVITGAKMRDETYKAFENIYPVLSEFRKIQQ"
+          },
+          {
+            "IPR030491&2": [
+              {
+                "accession": "PS00351",
+                "library": "PROSITE_PATTERNS",
+                "start": 52,
+                "end": 101,
+                "evalue": "null",
+                "score": "STRONG"
+              },
+              {
+                "accession": "PS00351",
+                "library": "PROSITE_PATTERNS",
+                "start": 143,
+                "end": 192,
+                "evalue": "null",
+                "score": "STRONG"
+              }
+            ],
+            "IPR030491": [],
+            "IPR000814&2": [
+              {
+                "accession": "PTHR10126",
+                "library": "PANTHER",
+                "start": 3,
+                "end": 197,
+                "evalue": true,
+                "score": 355.8
+              },
+              {
+                "accession": "PF00352",
+                "library": "PFAM",
+                "start": 23,
+                "end": 104,
+                "evalue": 1e-29,
+                "score": 113.5
+              },
+              {
+                "accession": "PF00352",
+                "library": "PFAM",
+                "start": 112,
+                "end": 195,
+                "evalue": 3.3e-30,
+                "score": 115.1
+              }
+            ],
+            "IPR000814": []
+          }
+        ]
+      },
+      {
+        "lcl|CP002684.1_cds_AEE28458.1_1793|frame=+1": [
+          {
+            "sequence": "MPLFELFRLTKAKLESAQDRNPSPPVDEVVELVWENGQISTQSQSSRSRNIPPPQANSSRAREIGNGSKTTMVDEIPMSVPSLMTGLSQDDDFVPWLNHHPSLDGYCSDFLRDVSSPVTVNEQESDMAVNQTAFPLFQRRKDGNESAPAASSSQYNGFQSHSLYGSDRARDLPSQQTNPDRFTQTQEPLITSNKPSLVNFSHFLRPATFAKTTNNNLHDTKEKSPQSPPNVFQTRVLGAKDSEDKVLNESVASATPKDNQKACLISEDSCRKDQESEKAVVCSSVGSGNSLDGPSESPSLSLKRKHSNIQDIDCHSEDVEEESGDGRKEAGPSRTGLGSKRSRSAEVHNLSERRRRDRINEKMRALQELIPNCNKVDKASMLDEAIEYLKSLQLQVQIMSMASGYYLPPAVMFPPGMGHYPAAAAAMAMGMGMPYAMGLPDLSRGGSSVNHGPQFQVSGMQQQPVAMGIPRVSGGGIFAGSSTIGNGSTRDLSGSKDQTTTNNNSNLKPIKRKQGSSDQFCGSS"
+          },
+          {
+            "IPR047265": [
+              {
+                "accession": "cd11445",
+                "library": "CDD",
+                "start": 343,
+                "end": 405,
+                "evalue": 4.21337e-41,
+                "score": 133.651
+              }
+            ],
+            "IPR011598": [
+              {
+                "accession": "PF00010",
+                "library": "PFAM",
+                "start": 346,
+                "end": 393,
+                "evalue": 1e-10,
+                "score": 52.6
+              },
+              {
+                "accession": "SM00353",
+                "library": "SMART",
+                "start": 349,
+                "end": 398,
+                "evalue": 4.9e-18,
+                "score": 75.9
+              },
+              {
+                "accession": "PS50888",
+                "library": "PROSITE_PROFILES",
+                "start": 343,
+                "end": 392,
+                "evalue": "null",
+                "score": 18.583929
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT4G14540.1": [
+          {
+            "sequence": "MADSDNDSGGHKDGGNASTREQDRFLPIANVSRIMKKALPANAKISKDAKETVQECVSEFISFITGEASDKCQREKRKTINGDDLLWAMTTLGFEDYVEPLKVYLQKYREVEGEKTTTAGRQGDKEGGGGGGGAGSGSGGAPMYGGGMVTTMGHQFSHHFS"
+          },
+          {
+            "IPR003956": [
+              {
+                "accession": "PS00685",
+                "library": "PROSITE_PATTERNS",
+                "start": 56,
+                "end": 72,
+                "evalue": "null",
+                "score": "STRONG"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT1G12610.1": [
+          {
+            "sequence": "MNNDDIILAEMRPKKRAGRRVFKETRHPVYRGIRRRNGDKWVCEVREPTHQRRIWLGTYPTADMAARAHDVAVLALRGRSACLNFADSAWRLPVPESNDPDVIRRVAAEAAEMFRPVDLESGITVLPCAGDDVDLGFGSGSGSGSGSEERNSSSYGFGDYEEVSTTMMRLAEGPLMSPPRSYMEDMTPTNVYTEEEMCYEDMSLWSYRY"
+          },
+          {
+            "IPR001471": [
+              {
+                "accession": "PS51032",
+                "library": "PROSITE_PROFILES",
+                "start": 29,
+                "end": 86,
+                "evalue": "null",
+                "score": 21.561787
+              },
+              {
+                "accession": "SM00380",
+                "library": "SMART",
+                "start": 29,
+                "end": 92,
+                "evalue": 6.5e-23,
+                "score": 92.1
+              },
+              {
+                "accession": "cd00018",
+                "library": "CDD",
+                "start": 30,
+                "end": 88,
+                "evalue": 2.08807e-28,
+                "score": 93.4902
+              },
+              {
+                "accession": "PF00847",
+                "library": "PFAM",
+                "start": 28,
+                "end": 78,
+                "evalue": 6.2e-09,
+                "score": 47.3
+              }
+            ],
+            "IPR045277": [
+              {
+                "accession": "PTHR31839",
+                "library": "PANTHER",
+                "start": 5,
+                "end": 207,
+                "evalue": true,
+                "score": 228.9
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT5G58080.1": [
+          {
+            "sequence": "MRVLAVDDNPTCLRKLEELLLRCKYHVTKTMESRKALEMLRENSNMFDLVISDVEMPDTDGFKLLEIGLEMDLPVIMLSAHSDYDSVMKGIIHGACDYLVKPVGLKELQNIWHHVVKKNIKSYAKLLPPSESDSVPSASRKRKDKVNDSGDEDDSDREEDDGEGSEQDGDGSGTRKKPRVVWSQELHQKFVSAVQQLGLDKAVPKKILDLMSIEGLTRENVASHLQKYRLYLKKIDEGQQQNMTPDAFGTRDSSYFQMAQLDGLRDFTAARQIPSSGLLSRSHLTKLQPPMYSSINLQGMNSSSFIQQGHHQNSSNSANPFGTYHSTLSPRIQNVNLFQRTSSPLEPLQFPRSKSYIGDFKGLGDRAIGGSFLDTCMPFGSSSTSLPSASTNPLMLQANYTQPLHIASDGIQPCIEGTPSNSASPNISFQGLSRFPGHSWQGNLNTTRFPPSSLPLNLAFLPDQVTCAGNNLGDCTSLVSAENPGGEMQCDPQLLGGFMQNVNPLGGQKWEQQNCTMLNNPFGNIEYPLPADNMVFRDNNSTRSKGLDESLMNPIDNSQEYVGKATTMLDPEMKSGKPENDNQHDVFDDIMNEMMKQEENNGMVPVATRFGFDSFPPP"
+          },
+          {
+            "IPR001005": [
+              {
+                "accession": "PF00249",
+                "library": "PFAM",
+                "start": 179,
+                "end": 229,
+                "evalue": 8.1e-06,
+                "score": 37.2
+              }
+            ],
+            "IPR045279": [
+              {
+                "accession": "PTHR43874",
+                "library": "PANTHER",
+                "start": 1,
+                "end": 316,
+                "evalue": true,
+                "score": 261.6
+              }
+            ],
+            "IPR001789": [
+              {
+                "accession": "PS50110",
+                "library": "PROSITE_PROFILES",
+                "start": 2,
+                "end": 116,
+                "evalue": true,
+                "score": 37.834045
+              },
+              {
+                "accession": "PF00072",
+                "library": "PFAM",
+                "start": 3,
+                "end": 110,
+                "evalue": 7.2e-18,
+                "score": 76.1
+              },
+              {
+                "accession": "SM00448",
+                "library": "SMART",
+                "start": 1,
+                "end": 112,
+                "evalue": 1.4e-26,
+                "score": 104.3
+              }
+            ],
+            "IPR006447": [
+              {
+                "accession": "TIGR01557",
+                "library": "NCBIFAM",
+                "start": 177,
+                "end": 230,
+                "evalue": 1.6e-21,
+                "score": 87.6
+              }
+            ],
+            "IPR017930": [
+              {
+                "accession": "PS51294",
+                "library": "PROSITE_PROFILES",
+                "start": 174,
+                "end": 233,
+                "evalue": true,
+                "score": 11.611636
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT1G75490.1": [
+          {
+            "sequence": "MSSIEPKVMMVGANKKQRTVQASSRKGCMRGKGGPDNASCTYKGVRQRTWGKWVAEIREPNRGARLWLGTFDTSREAALAYDSAARKLYGPEAHLNLPESLRSYPKTASSPASQTTPSSNTGGKSSSDSESPCSSNEMSSCGRVTEEISWEHINVDLPVMDDSSIWEEATMSLGFPWVHEGDNDISRFDTCISGGYSNWDSFHSPL"
+          },
+          {
+            "IPR001471": [
+              {
+                "accession": "cd00018",
+                "library": "CDD",
+                "start": 40,
+                "end": 100,
+                "evalue": 3.36462e-34,
+                "score": 108.128
+              },
+              {
+                "accession": "PS51032",
+                "library": "PROSITE_PROFILES",
+                "start": 41,
+                "end": 98,
+                "evalue": "null",
+                "score": 21.983412
+              },
+              {
+                "accession": "PF00847",
+                "library": "PFAM",
+                "start": 42,
+                "end": 90,
+                "evalue": 5e-12,
+                "score": 57.2
+              },
+              {
+                "accession": "SM00380",
+                "library": "SMART",
+                "start": 41,
+                "end": 104,
+                "evalue": 2e-34,
+                "score": 130.4
+              }
+            ],
+            "IPR045277": [
+              {
+                "accession": "PTHR31839",
+                "library": "PANTHER",
+                "start": 39,
+                "end": 113,
+                "evalue": true,
+                "score": 85.6
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT4G24660.1": [
+          {
+            "sequence": "MNFEDQEEDMEMSGVNPPCGYDSLSGEGATSSGGGGVGRSKGVGAKIRYRECLKNHAVNIGGHAVDGCCEFMPSGEDGTLDALKCAACGCHRNFHRKETESIGGRAHRVPTYYNRPPQPHQPPGYLHLTSPAAPYRPPAASGDEEDTSNPSSSGGTTKRFRTKFTAEQKEKMLAFAERLGWRIQKHDDVAVEQFCAETGVRRQVLKIWMHNNKNSLGKKP"
+          },
+          {
+            "IPR006456": [
+              {
+                "accession": "PF04770",
+                "library": "PFAM",
+                "start": 47,
+                "end": 99,
+                "evalue": 1.2e-27,
+                "score": 107.3
+              },
+              {
+                "accession": "TIGR01566",
+                "library": "NCBIFAM",
+                "start": 48,
+                "end": 98,
+                "evalue": 3.4e-25,
+                "score": 99.5
+              },
+              {
+                "accession": "PS51523",
+                "library": "PROSITE_PROFILES",
+                "start": 49,
+                "end": 98,
+                "evalue": "null",
+                "score": 27.365578
+              }
+            ],
+            "IPR006455": [
+              {
+                "accession": "TIGR01565",
+                "library": "NCBIFAM",
+                "start": 158,
+                "end": 214,
+                "evalue": 2.9e-23,
+                "score": 92.8
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT1G63030.1": [
+          {
+            "sequence": "MENDDITVAEMKPKKRAGRRIFKETRHPIYRGVRRRDGDKWVCEVREPIHQRRVWLGTYPTADMAARAHDVAVLALRGRSACLNFSDSAWRLPVPASTDPDTIRRTAAEAAEMFRPPEFSTGITVLPSASEFDTSDEGVAGMMMRLAEEPLMSPPRSYIDMNTSVYVDEEMCYEDLSLWSY"
+          },
+          {
+            "IPR001471": [
+              {
+                "accession": "cd00018",
+                "library": "CDD",
+                "start": 28,
+                "end": 88,
+                "evalue": 1.05398e-28,
+                "score": 93.4902
+              },
+              {
+                "accession": "PS51032",
+                "library": "PROSITE_PROFILES",
+                "start": 29,
+                "end": 86,
+                "evalue": "null",
+                "score": 21.891182
+              },
+              {
+                "accession": "PF00847",
+                "library": "PFAM",
+                "start": 29,
+                "end": 78,
+                "evalue": 3.8e-09,
+                "score": 48.0
+              },
+              {
+                "accession": "SM00380",
+                "library": "SMART",
+                "start": 29,
+                "end": 92,
+                "evalue": 4.5e-24,
+                "score": 96.0
+              }
+            ],
+            "IPR045277": [
+              {
+                "accession": "PTHR31839",
+                "library": "PANTHER",
+                "start": 5,
+                "end": 181,
+                "evalue": true,
+                "score": 222.9
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT4G35040.1": [
+          {
+            "sequence": "MEDGELDFSNQEVFSSSEMGELPPSNCSMDSFFDGLLMDTNAACTHTHTCNPTGPENTHTHTCFHVHTKILPDESDEKVSTDDTAESCGKKGEKRPLGNREAVRKYREKKKAKAASLEDEVARLRAVNQQLVKRLQNQATLEAEVSRLKCLLVDLRGRIDGEIGSFPYQKPMAANIPSFSHMMNPCNVQCDDEVYCPQNVFGVNSQEGASINDQGLSGCDFDQLQCMANQNLNGNGNGSFSNVNTSVSNKRKGGHRASRAV"
+          },
+          {
+            "IPR004827": [
+              {
+                "accession": "PS50217",
+                "library": "PROSITE_PROFILES",
+                "start": 89,
+                "end": 155,
+                "evalue": "null",
+                "score": 8.863866
+              },
+              {
+                "accession": "PF07716",
+                "library": "PFAM",
+                "start": 91,
+                "end": 144,
+                "evalue": 3.6e-09,
+                "score": 47.9
+              },
+              {
+                "accession": "SM00338",
+                "library": "SMART",
+                "start": 87,
+                "end": 154,
+                "evalue": 4.4e-11,
+                "score": 52.8
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT5G51990.1": [
+          {
+            "sequence": "MNPFYSTFPDSFLSISDHRSPVSDSSECSPKLASSCPKKRAGRKKFRETRHPIYRGVRQRNSGKWVCEVREPNKKSRIWLGTFPTVEMAARAHDVAALALRGRSACLNFADSAWRLRIPETTCPKEIQKAASEAAMAFQNETTTEGSKTAAEAEEAAGEGVREGERRAEEQNGGVFYMDDEALLGMPNFFENMAEGMLLPPPEVGWNHNDFDGVGDVSLWSFDE"
+          },
+          {
+            "IPR001471": [
+              {
+                "accession": "SM00380",
+                "library": "SMART",
+                "start": 53,
+                "end": 116,
+                "evalue": 6.8e-31,
+                "score": 118.6
+              },
+              {
+                "accession": "PF00847",
+                "library": "PFAM",
+                "start": 53,
+                "end": 102,
+                "evalue": 2.3e-12,
+                "score": 58.3
+              },
+              {
+                "accession": "PS51032",
+                "library": "PROSITE_PROFILES",
+                "start": 53,
+                "end": 110,
+                "evalue": "null",
+                "score": 22.246929
+              },
+              {
+                "accession": "cd00018",
+                "library": "CDD",
+                "start": 52,
+                "end": 112,
+                "evalue": 1.85811e-34,
+                "score": 109.283
+              }
+            ],
+            "IPR045277": [
+              {
+                "accession": "PTHR31839",
+                "library": "PANTHER",
+                "start": 17,
+                "end": 221,
+                "evalue": true,
+                "score": 271.1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT3G16857.1": [
+          {
+            "sequence": "MMNPSHGRGLGSAGGSSSGRNQGGGGETVVEMFPSGLRVLVVDDDPTCLMILERMLRTCLYEVTKCNRAEMALSLLRKNKHGFDIVISDVHMPDMDGFKLLEHVGLEMDLPVIMMSADDSKSVVLKGVTHGAVDYLIKPVRMEALKNIWQHVVRKRRSEWSVPEHSGSIEETGERQQQQHRGGGGGAAVSGGEDAVDDNSSSVNEGNNWRSSSRKRKDEEGEEQGDDKDEDASNLKKPRVVWSVELHQQFVAAVNQLGVEKAVPKKILELMNVPGLTRENVASHLQKYRIYLRRLGGVSQHQGNLNNSFMTGQDASFGPLSTLNGFDLQALAVTGQLPAQSLAQLQAAGLGRPAMVSKSGLPVSSIVDERSIFSFDNTKTRFGEGLGHHGQQPQQQPQMNLLHGVPTGLQQQLPMGNRMSIQQQIAAVRAGNSVQNNGMLMPLAGQQSLPRGPPPMLTSSQSSIRQPMLSNRISERSGFSGRNNIPESSRVLPTSYTNLTTQHSSSSMPYNNFQPELPVNSFPLASAPGISVPVRKATSYQEEVNSSEAGFTTPSYDMFTTRQNDWDLRNIGIAFDSHQDSESAAFSASEAYSSSSMSRHNTTVAATEHGRNHQQPPSGMVQHHQVYADGNGGSVRVKSERVATDTATMAFHEQYSNQEDLMSALLKQV"
+          },
+          {
+            "IPR045279": [
+              {
+                "accession": "PTHR43874",
+                "library": "PANTHER",
+                "start": 37,
+                "end": 476,
+                "evalue": true,
+                "score": 305.9
+              }
+            ],
+            "IPR001005": [
+              {
+                "accession": "PF00249",
+                "library": "PFAM",
+                "start": 239,
+                "end": 289,
+                "evalue": 4.1e-05,
+                "score": 34.9
+              }
+            ],
+            "IPR006447": [
+              {
+                "accession": "TIGR01557",
+                "library": "NCBIFAM",
+                "start": 237,
+                "end": 290,
+                "evalue": 4.4e-20,
+                "score": 83.0
+              }
+            ],
+            "IPR001789": [
+              {
+                "accession": "SM00448",
+                "library": "SMART",
+                "start": 37,
+                "end": 149,
+                "evalue": 7.4e-31,
+                "score": 118.5
+              },
+              {
+                "accession": "PS50110",
+                "library": "PROSITE_PROFILES",
+                "start": 38,
+                "end": 153,
+                "evalue": true,
+                "score": 42.221428
+              },
+              {
+                "accession": "PF00072",
+                "library": "PFAM",
+                "start": 39,
+                "end": 147,
+                "evalue": 7.9e-20,
+                "score": 82.5
+              }
+            ],
+            "IPR017930": [
+              {
+                "accession": "PS51294",
+                "library": "PROSITE_PROFILES",
+                "start": 234,
+                "end": 293,
+                "evalue": true,
+                "score": 11.5396
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT2G13570.1": [
+          {
+            "sequence": "MTEESPEEDHGSPGVAETNPGSPSSKTNNNNNNNKEQDRFLPIANVGRIMKKVLPGNGKISKDAKETVQECVSEFISFVTGEASDKCQREKRKTINGDDIIWAITTLGFEDYVAPLKVYLCKYRDTEGEKVNSPKQQQQRQQQQQIQQQNHHNYQFQEQDQNNNNMSCTSYISHHHPSPFLPVDHQPFPNIAFSPKSLQKQFPQQHDNNIDSIHW"
+          },
+          {
+            "IPR003956": [
+              {
+                "accession": "PS00685",
+                "library": "PROSITE_PATTERNS",
+                "start": 71,
+                "end": 87,
+                "evalue": "null",
+                "score": "STRONG"
+              }
+            ],
+            "IPR007125": [
+              {
+                "accession": "PF00125",
+                "library": "PFAM",
+                "start": 21,
+                "end": 104,
+                "evalue": 0.00051,
+                "score": 31.7
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT5G47670.2": [
+          {
+            "sequence": "MAEGSMRPPEFNQPNKTSNGGEEECTVREQDRFMPIANVIRIMRRILPAHAKISDDSKETIQECVSEYISFITGEANERCQREQRKTITAEDVLWAMSKLGFDDYIEPLTLYLHRYRELEGERGVSCSAGSVSMTNGLVVKRPNGTMTEYGAYGPVPGIHMAQYHYRHQNGFVFSGNEPNSKMSGSSSGASGARVEVFPTQQHKY"
+          },
+          {
+            "IPR003956": [
+              {
+                "accession": "PS00685",
+                "library": "PROSITE_PATTERNS",
+                "start": 64,
+                "end": 80,
+                "evalue": "null",
+                "score": "STRONG"
+              }
+            ],
+            "IPR007125": [
+              {
+                "accession": "PF00125",
+                "library": "PFAM",
+                "start": 16,
+                "end": 97,
+                "evalue": 0.0049,
+                "score": 28.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "AT3G11020.1": [
+          {
+            "sequence": "MAVYEQTGTEQPKKRKSRARAGGLTVADRLKKWKEYNEIVEASAVKEGEKPKRKVPAKGSKKGCMKGKGGPDNSHCSFRGVRQRIWGKWVAEIREPKIGTRLWLGTFPTAEKAASAYDEAATAMYGSLARLNFPQSVGSEFTSTSSQSEVCTVENKAVVCGDVCVKHEDTDCESNPFSQILDVREESCGTRPDSCTVGHQDMNSSLNYDLLLEFEQQYWGQVLQEKEKPKQEEEEIQQQQQEQQQQQLQPDLLTVADYGWPWSNDIVNDQTSWDPNECFDINELLGDLNEPGPHQSQDQNHVNSGSYDLHPLHLEPHDGHEFNGLSSLDI"
+          },
+          {
+            "IPR001471": [
+              {
+                "accession": "PS51032",
+                "library": "PROSITE_PROFILES",
+                "start": 77,
+                "end": 134,
+                "evalue": "null",
+                "score": 21.627666
+              },
+              {
+                "accession": "PF00847",
+                "library": "PFAM",
+                "start": 77,
+                "end": 126,
+                "evalue": 9.5e-10,
+                "score": 49.9
+              },
+              {
+                "accession": "SM00380",
+                "library": "SMART",
+                "start": 77,
+                "end": 140,
+                "evalue": 4e-40,
+                "score": 149.3
+              },
+              {
+                "accession": "cd00018",
+                "library": "CDD",
+                "start": 76,
+                "end": 136,
+                "evalue": 5.27776e-37,
+                "score": 118.913
+              }
+            ],
+            "IPR045277": [
+              {
+                "accession": "PTHR31839",
+                "library": "PANTHER",
+                "start": 44,
+                "end": 190,
+                "evalue": true,
+                "score": 93.7
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

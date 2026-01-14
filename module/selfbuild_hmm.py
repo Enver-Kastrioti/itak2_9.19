@@ -35,26 +35,6 @@ def parse_pfam_spec(file_path):
             except ValueError:
                 continue
 
-            # 如果是NF-YB或NF-YC，先存储得分
-            if accession in ['NF-YB', 'NF-YC']:
-                if gene_id not in temp_scores:
-                    temp_scores[gene_id] = {}
-                temp_scores[gene_id][accession] = score_value
-                
-                # 如果该基因同时有NF-YB和NF-YC的得分，进行比较
-                if len(temp_scores[gene_id]) == 2:
-                    # 只保留得分较高的
-                    if temp_scores[gene_id]['NF-YB'] <= temp_scores[gene_id]['NF-YC']:
-                        if 'NF-YB' in result[gene_id]:
-                            del result[gene_id]['NF-YB']
-                            hit_counts[gene_id]['NF-YB'] = 0
-                        continue
-                    else:
-                        if 'NF-YC' in result[gene_id]:
-                            del result[gene_id]['NF-YC']
-                            hit_counts[gene_id]['NF-YC'] = 0
-                        continue
-                
             # 记录命中次数
             hit_counts[gene_id][accession] += 1
             

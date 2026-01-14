@@ -40,47 +40,31 @@ INTERPROSCAN_SCRIPT = DB_DIR / "interproscan" / "interproscan.sh"
 
 def ensure_db_extracted():
     """
-    确保db文件夹已解压。如果db文件夹不存在但db.tar.gz存在，则自动解压。
+    确保db文件夹已解压。如果db文件夹不存在，尝试从压缩包解压或从GitHub下载。
+    使用 module/db_manager.py 实现。
     
     Returns:
         bool: 如果db文件夹可用返回True，否则返回False
     """
     try:
-        # 如果db文件夹已存在，直接返回True
-        if DB_DIR.exists() and DB_DIR.is_dir():
-            return True
+        import importlib.util
+        db_manager_path = MODULE_DIR / "db_manager.py"
         
-        # 如果db文件夹不存在，检查是否有压缩文件
-        if not DB_ARCHIVE.exists():
-            print(f"错误: db文件夹和压缩文件都不存在")
-            print(f"  缺失: {DB_DIR}")
-            print(f"  缺失: {DB_ARCHIVE}")
+        if not db_manager_path.exists():
+            print(f"错误: db_manager模块不存在: {db_manager_path}")
+            # 回退到旧逻辑 (仅检查存在性)
+            if DB_DIR.exists() and DB_DIR.is_dir():
+                return True
             return False
-        
-        print(f"检测到db文件夹不存在，正在从 {DB_ARCHIVE} 解压...")
-        
-        # 解压db.tar.gz文件
-        with tarfile.open(DB_ARCHIVE, 'r:gz') as tar:
-            tar.extractall(path=SCRIPT_DIR)
-        
-        # 验证解压是否成功
-        if DB_DIR.exists() and DB_DIR.is_dir():
-            print(f"db文件夹解压成功: {DB_DIR}")
             
-            # 删除压缩文件
-            try:
-                DB_ARCHIVE.unlink()
-                print(f"已删除原始压缩文件: {DB_ARCHIVE}")
-            except Exception as e:
-                print(f"警告: 删除压缩文件失败: {e}")
-            
-            return True
-        else:
-            print(f"错误: 解压后db文件夹仍不存在: {DB_DIR}")
-            return False
+        spec = importlib.util.spec_from_file_location("db_manager", db_manager_path)
+        db_manager = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(db_manager)
+        
+        return db_manager.setup_db(SCRIPT_DIR)
             
     except Exception as e:
-        print(f"解压db文件夹时出错: {e}")
+        print(f"检查/准备db文件夹时出错: {e}")
         return False
 
 
@@ -154,7 +138,7 @@ def setup_project_output(fasta_file, output=None):
     return project_output
 
 # 模块分析功能
-def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=False, score_threshold=1.0):
+def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=False, score_threshold=1.0, classification_mode='specific'):
     """
     运行分析模块进行转录因子分类
     
@@ -164,6 +148,7 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
         use_predicted (bool): 是否使用预测后的序列文件
         debug (bool): 是否启用调试模式，输出调试文件
         score_threshold (float): InterProScan结果的score阈值
+        classification_mode (str): 分类模式 ('specific' 或 'score')
     
     Returns:
         bool: 是否成功完成分析
@@ -176,7 +161,7 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
         # 确定要使用的FASTA文件
         if use_predicted:
             # 使用预测后的TF序列文件
-            tf_fasta_file = project_output / "fasta" / f"{Path(fasta_file).stem}_tf_sequences.fasta"
+            tf_fasta_file = project_output / "protein_model_preclassification" / f"{Path(fasta_file).stem}_tf_sequences.fasta"
             if not tf_fasta_file.exists():
                 print(f"警告: 预测的TF序列文件不存在: {tf_fasta_file}")
                 print("将使用原始输入文件进行分析")
@@ -184,20 +169,30 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             else:
                 analysis_fasta = str(tf_fasta_file)
         else:
-            # 直接使用输入文件
-            analysis_fasta = fasta_file
+            try:
+                import importlib.util
+                get_fasta_path = MODULE_DIR / "get_fasta.py"
+                spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
+                get_fasta = module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                processed_path = module.get_processed_fasta_path(fasta_file, project_output)
+                if not Path(processed_path).exists():
+                    module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
+                analysis_fasta = processed_path
+            except Exception:
+                analysis_fasta = fasta_file
         
         # 确定其他必需的文件路径
         # InterProScan生成的文件名包含完整的输入文件名（包括扩展名）
         input_filename = Path(analysis_fasta).name
-        ipr_file = project_output / "ipr" / f"{input_filename}.json"
+        ipr_file = project_output / "InterproScan" / f"{input_filename}.json"
         hmmscan_file = project_output / "hmmscan" / "result.tbl"
         # 确保db文件夹已解压
         if not ensure_db_extracted():
             print("错误: 无法获取db文件夹")
             return False
             
-        rule_file = DB_DIR / "rule.txt"
+        rule_file = SCRIPT_DIR / "rule.txt"
         
         # 检查必需文件是否存在
         missing_files = []
@@ -255,7 +250,7 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
         
         # 步骤2: 运行specpfam模块
                 # 步骤2: 运行specpfam模块
-        print("\n步骤2: 运行specpfam模块...")
+        print("\n步骤2: 运行selfbuild_hmm模块...")
         specpfam_result = run_specpfam_module(str(hmmscan_file), result_dir, debug=debug)
         
         # 处理specpfam模块的返回结果
@@ -267,13 +262,13 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             spec_data = None
             
         if not specpfam_success:
-            print("specpfam模块运行失败")
+            print("selfbuild_hmm模块运行失败")
             return False
             
         if spec_data is not None:
-            print("成功获取spec数据用于分类")
+            print("成功获取selfbuild_hmm数据用于分类")
         else:
-            print("未获取到spec数据，将仅使用IPR数据进行分类")
+            print("未获取到selfbuild_hmm数据，将仅使用IPR数据进行分类")
         
         # 步骤3: 运行class_tf模块（支持内存数据传递）
         print("\n步骤3: 运行class_tf模块...")
@@ -283,7 +278,8 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             result_dir, 
             debug=debug,
             filtered_data=filtered_data,
-            spec_data=spec_data
+            spec_data=spec_data,
+            classification_mode=classification_mode
         )
         if not class_tf_success:
             print("class_tf模块运行失败")
@@ -301,27 +297,20 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
         return False
 
 def run_getrule_module(rule_file, output_dir, debug=False):
-    """运行get_rule模块，将规则文件JSON输出到指定目录"""
     try:
-        # 直接导入并调用get_rule模块
         import importlib.util
         get_rule_path = MODULE_DIR / "get_rule.py"
         spec = importlib.util.spec_from_file_location("get_rule", get_rule_path)
         get_rule = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(get_rule)
-        
-        # 调用get_rule模块的parse_rule_file函数
         rules = get_rule.parse_rule_file(rule_file)
-        
-        # 将结果写入JSON文件到项目文件夹根目录
-        output_file = os.path.join(output_dir, 'getrule.json')
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(rules, f, indent=2, ensure_ascii=False)
-        
-        print(f"规则已成功解析并保存到 {output_file}")
+        if debug:
+            output_file = os.path.join(output_dir, 'getrule.json')
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(rules, f, indent=2, ensure_ascii=False)
+            print(f"规则已成功解析并保存到 {output_file}")
         print("get_rule模块运行成功")
         return True
-            
     except Exception as e:
         print(f"运行get_rule模块时出错: {e}")
         return False
@@ -426,7 +415,7 @@ def run_specpfam_module(hmmscan_file, result_dir, debug=False):
         return False
 
 #运行分类功能
-def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered_data=None, spec_data=None):
+def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered_data=None, spec_data=None, classification_mode='specific'):
 
     try:
         # 首先尝试直接调用模块函数（内存传递）
@@ -446,7 +435,8 @@ def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered
                 rule_file=str(rule_file),
                 filtered_data=filtered_data,
                 spec_data=spec_data,
-                debug=debug
+                debug=debug,
+                mode=classification_mode
             )
             
             if classification_result is not None:
@@ -546,7 +536,6 @@ def extract_tf_sequences_from_memory(fasta_file, tf_headers, output_dir):
                     if record.id in tf_headers or record.description in tf_headers:
                         SeqIO.write(record, output_handle, "fasta")
                         extracted_count += 1
-                        print(f"提取序列: {record.id}")
         
         print(f"成功提取 {extracted_count} 个TF序列")
         
@@ -590,7 +579,6 @@ def extract_tf_sequences_from_csv(fasta_file, csv_file, output_dir, threshold):
                     if record.id in tf_headers or record.description in tf_headers:
                         SeqIO.write(record, output_handle, "fasta")
                         extracted_count += 1
-                        print(f"提取序列: {record.id}")
         
         print(f"成功提取 {extracted_count} 个TF序列")
         
@@ -614,7 +602,7 @@ def run_interproscan(fasta_file, output_dir, appl_list=None):
             return False
             
         # 创建ipr输出目录
-        ipr_output_dir = Path(output_dir) / "ipr"
+        ipr_output_dir = Path(output_dir) / "InterproScan"
         ipr_output_dir.mkdir(exist_ok=True)
         
         # 构建InterProScan命令
@@ -704,7 +692,8 @@ def run_hmmscan(fasta_file, output_dir):
 #完整运行流程
 def predict_transcription_factors(threshold, fasta_file, output=None, extract_sequences=True, 
                                 run_interproscan_analysis=True, run_hmmscan_analysis=True, 
-                                appl_list=None, debug=False, score_threshold=1.0):
+                                appl_list=None, debug=False, score_threshold=1.0, classification_mode='specific',
+                                predict_mode='fast'):
     # 记录预测开始时间
     predict_start_time = time.time()
     
@@ -721,6 +710,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print(f"输入文件: {fasta_file}")
         print(f"输出目录: {project_output}")
         print(f"预测阈值: {threshold}")
+        print(f"预测模式: {predict_mode}")
         
         # 构建预测命令
         if not PREDICT_SCRIPT.exists():
@@ -729,22 +719,27 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         
         # 生成输出文件名
         fasta_basename = Path(fasta_file).stem
-        output_file = project_output / f"{fasta_basename}_prediction.csv"
+        
+        # 创建预分类结果目录
+        preclass_dir = project_output / "protein_model_preclassification"
+        preclass_dir.mkdir(exist_ok=True)
+        
+        output_file = preclass_dir / f"{fasta_basename}_prediction.csv"
         
         cmd = [
             "python", str(PREDICT_SCRIPT),
             "--fasta", fasta_file,
             "--threshold", str(threshold),
-            "--output", str(output_file)
+            "--output", str(output_file),
+            "--project-output", str(project_output),
+            "--mode", predict_mode
         ]
         
         # 在debug模式下添加debug参数
         if debug:
             cmd.append("--debug")
         
-        # 在非debug模式下添加输出TF列表参数
-        if not debug and extract_sequences:
-            cmd.append("--output-tf-list")
+        # 非debug模式不输出TF列表到终端，依赖预测脚本写出的FASTA
         
         print(f"执行命令: {' '.join(cmd)}")
         
@@ -763,6 +758,10 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         
         print(f"预测完成 (耗时: {format_duration(step_duration)})")
         
+        # 显示预测脚本的输出信息（包含序列拆分统计等）
+        if result.stdout:
+            print(result.stdout)
+        
         # 提取预测的TF序列
         tf_fasta = None
         if extract_sequences:
@@ -770,8 +769,20 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             step_start_time = time.time()
             
             # 创建fasta文件夹
-            fasta_output_dir = project_output / "fasta"
+            fasta_output_dir = project_output / "protein_model_preclassification"
             fasta_output_dir.mkdir(exist_ok=True)
+            # 使用处理后的蛋白FASTA作为提取源，避免原始FASTA无法匹配frame后缀
+            try:
+                import importlib.util
+                get_fasta_path = MODULE_DIR / "get_fasta.py"
+                spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                processed_fasta = module.get_processed_fasta_path(fasta_file, project_output)
+                if not processed_fasta.exists():
+                    module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
+            except Exception:
+                processed_fasta = Path(fasta_file)
             
             if debug:
                 # Debug模式：从CSV文件提取
@@ -781,28 +792,16 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                     return False
                 
                 print(f"使用预测结果文件: {prediction_file}")
-                tf_fasta = extract_tf_sequences_from_csv(fasta_file, str(prediction_file), str(fasta_output_dir), threshold)
+                tf_fasta = extract_tf_sequences_from_csv(str(processed_fasta), str(prediction_file), str(fasta_output_dir), threshold)
             else:
-                # 非Debug模式：从预测输出解析TF列表
-                print("使用内存传递方式提取TF序列")
-                tf_headers = []
-                
-                # 解析预测输出中的TF列表
-                output_lines = result.stdout.split('\n')
-                in_tf_list = False
-                for line in output_lines:
-                    if line.strip() == "TF_LIST_START":
-                        in_tf_list = True
-                        continue
-                    elif line.strip() == "TF_LIST_END":
-                        in_tf_list = False
-                        continue
-                    elif in_tf_list and line.startswith("TF_HEADER:"):
-                        header = line.replace("TF_HEADER:", "").strip()
-                        tf_headers.append(header)
-                
-                print(f"从预测输出解析到 {len(tf_headers)} 个TF序列")
-                tf_fasta = extract_tf_sequences_from_memory(fasta_file, tf_headers, str(fasta_output_dir))
+                # 非Debug模式：直接使用预测脚本写出的TF FASTA
+                tf_fasta_path = fasta_output_dir / f"{fasta_basename}_tf_sequences.fasta"
+                if tf_fasta_path.exists():
+                    tf_fasta = str(tf_fasta_path)
+                    print(f"已生成TF序列FASTA: {tf_fasta}")
+                else:
+                    print("未找到预测脚本写出的TF FASTA")
+                    return False
             
             if tf_fasta is None:
                 print("序列提取失败")
@@ -847,7 +846,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             print("\n5. 运行分析模块进行转录因子分类...")
             step_start_time = time.time()
             
-            analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=debug, score_threshold=score_threshold)
+            analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
             
             step_end_time = time.time()
             step_duration = step_end_time - step_start_time
@@ -870,7 +869,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print(f"预测过程中发生错误: {e}")
         return False
 #不使用预测功能
-def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0):
+def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0, classification_mode='specific'):
     # 记录分析开始时间
     analysis_start_time = time.time()
     
@@ -887,11 +886,21 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print(f"输入文件: {fasta_file}")
         print(f"输出目录: {project_output}")
         
+        try:
+            import importlib.util
+            get_fasta_path = MODULE_DIR / "get_fasta.py"
+            spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
+            get_fasta = module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            processed_fasta = module.get_processed_fasta_path(fasta_file, project_output)
+            if not Path(processed_fasta).exists():
+                module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
+        except Exception:
+            processed_fasta = fasta_file
         # 运行InterProScan分析
         print("1. 运行InterProScan分析...")
         step_start_time = time.time()
-        
-        interproscan_success = run_interproscan(fasta_file, str(project_output), appl_list)
+        interproscan_success = run_interproscan(processed_fasta, str(project_output), appl_list)
         
         step_end_time = time.time()
         step_duration = step_end_time - step_start_time
@@ -905,7 +914,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print("\n2. 运行hmmscan分析...")
         step_start_time = time.time()
         
-        hmmscan_success = run_hmmscan(fasta_file, str(project_output))
+        hmmscan_success = run_hmmscan(processed_fasta, str(project_output))
         
         step_end_time = time.time()
         step_duration = step_end_time - step_start_time
@@ -920,7 +929,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             print("\n3. 运行分析模块进行转录因子分类...")
             step_start_time = time.time()
             
-            analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=False, debug=debug, score_threshold=score_threshold)
+            analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
             
             step_end_time = time.time()
             step_duration = step_end_time - step_start_time
@@ -944,7 +953,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         return False
 
 # -test模式，使用使用现有的结果进行运行，测试分类的功能
-def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False, score_threshold=1.0):
+def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False, score_threshold=1.0, classification_mode='specific'):
     print(f"\n{'='*50}")
     print("启动测试模式")
     print("跳过InterProScan和hmmscan步骤，直接使用提供的文件进行分类验证")
@@ -956,7 +965,7 @@ def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False,
         print(f"项目输出目录: {project_output}")
         
         # 创建必要的子目录结构
-        ipr_dir = project_output / "ipr"
+        ipr_dir = project_output / "InterproScan"
         hmmscan_dir = project_output / "hmmscan"
         result_dir = project_output / "result"
         
@@ -996,7 +1005,7 @@ def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False,
         analysis_start_time = time.time()
         
         # 运行分析模块（使用原始FASTA文件，不使用预测序列）
-        analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=False, debug=debug, score_threshold=score_threshold)
+        analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
         
         # 计算分析时间
         analysis_end_time = time.time()
@@ -1112,6 +1121,14 @@ def main():
     parser.add_argument('--score', type=float, default=1.0,
                        help='InterProScan结果的score阈值，只有大于此值的结果才会被保留 (默认: 1.0)')
     
+    # 分类模式参数
+    parser.add_argument('--classification-mode', choices=['specific', 'score'], default='specific',
+                       help="分类模式: 'specific' (特异性优先，默认) 或 'score' (得分优先)")
+    
+    # 预测模式参数
+    parser.add_argument('--predict-mode', choices=['fast', 'full'], default='fast',
+                       help="序列预测拆分模式: 'fast' (快速模式，默认) 或 'full' (全覆盖模式)")
+
     # 依赖检测参数
     parser.add_argument('--check-deps', action='store_true',
                        help='仅检查依赖并退出，不运行主程序')
@@ -1136,6 +1153,19 @@ def main():
         checker = DependencyChecker()
         dependencies_ok = checker.run_full_check()
         
+        # 如果db缺失，run_full_check 会尝试下载并解压。
+        # 如果下载成功，dependencies_ok 应该为 True（前提是其他依赖也满足）。
+        # 如果下载/解压失败，dependencies_ok 为 False。
+        
+        if not dependencies_ok:
+            # 检查是否是因为数据库下载成功但需要重启（这种情况通常不会发生，因为setup_db是同步的）
+            # 但为了安全起见，我们再次检查一次db是否就绪
+            if checker.ensure_db_extracted():
+                 # 如果db现在好了，但刚才报错了，可能是有其他依赖缺失
+                 # 重新运行检查以确认
+                 print("\n[信息] 数据库已准备就绪，重新检查所有依赖...")
+                 dependencies_ok = checker.run_full_check()
+
         if not dependencies_ok:
             print("\n[错误] 依赖检查失败！程序可能无法正常运行。")
             print("请安装缺失的依赖，或使用 --skip-deps-check 强制运行（不推荐）")
@@ -1215,7 +1245,8 @@ def main():
             spechmm_file=args.spechmm_file,
             output=args.output,
             debug=args.debug,
-            score_threshold=args.score
+            score_threshold=args.score,
+            classification_mode=args.classification_mode
         )
     elif args.predict:
         # 使用预测功能 - 首先检查预测功能的依赖
@@ -1252,7 +1283,9 @@ def main():
             run_hmmscan_analysis=True,       # 默认启用
             appl_list=args.appl,
             debug=args.debug,
-            score_threshold=args.score
+            score_threshold=args.score,
+            classification_mode=args.classification_mode,
+            predict_mode=args.predict_mode
         )
     else:
         # 直接分析输入文件，跳过预测步骤
@@ -1262,7 +1295,8 @@ def main():
             output=args.output,
             appl_list=args.appl,
             debug=args.debug,
-            score_threshold=args.score
+            score_threshold=args.score,
+            classification_mode=args.classification_mode
         )
     
     if success:

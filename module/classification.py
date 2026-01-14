@@ -106,8 +106,6 @@ def initialize_rules(rule_file_path):
 def merge_results(dict1, dict2):
     """合并两个结果字典"""
     print(f"[信息] 开始合并结果...")
-    print(f"dict1 中有 {len(dict1['result']['match'])} 个基因")
-    print(f"dict2 中有 {len(dict2['result']['match'])} 个基因")
     
     # 创建新的match列表
     merged_matches = []
@@ -126,7 +124,6 @@ def merge_results(dict1, dict2):
             found = False
             for existing_match in merged_matches:
                 if gene_id in existing_match:
-                    print(f"[信息] 合并基因 {gene_id}")
                     # 找到了现有基因，合并域数据
                     existing_gene_data = existing_match[gene_id]
                     
@@ -135,7 +132,6 @@ def merge_results(dict1, dict2):
                         if isinstance(existing_gene_data[1], dict) and isinstance(gene_data, list) and len(gene_data) >= 2:
                             # 合并第二个元素（域字典）
                             for domain, hits in gene_data[1].items():
-                                print(f"  添加域: {domain}")
                                 if domain in existing_gene_data[1]:
                                     # 如果域已存在，扩展匹配列表
                                     if isinstance(existing_gene_data[1][domain], list):
@@ -151,7 +147,6 @@ def merge_results(dict1, dict2):
                     break
             
             if not found:
-                print(f"[信息] 添加新基因 {gene_id}")
                 # 如果是新基因，创建新的字典并添加
                 merged_matches.append({gene_id: gene_data})
                 new_count += 1
@@ -160,47 +155,128 @@ def merge_results(dict1, dict2):
     return {"result": {"match": merged_matches}}
 
 # 其他函数保持不变
-def get_ipr_set(gene_data):
-    """从基因数据中提取IPR集合"""
-    # gene_data是一个列表，第二个元素（索引1）包含IPR信息
+def get_ipr_counts(gene_data):
+    """从基因数据中提取IPR计数
+    注意：同一个IPR下可能包含来自不同数据库（accession）的hits。
+    计算hits数量时，应取单个accession出现的最大次数，而不是所有hits的总和。
+    """
+    counts = {}
     if len(gene_data) > 1 and isinstance(gene_data[1], dict):
-        return set(ipr for ipr in gene_data[1].keys())
-    return set()
+        for ipr_key, hits in gene_data[1].items():
+            # 处理键名中可能存在的计数后缀（如 IPR001005&3）
+            real_ipr = ipr_key.split('&')[0]
+            
+            # 统计每个accession出现的次数
+            accession_counts = {}
+            if isinstance(hits, list):
+                for hit in hits:
+                    acc = hit.get('accession')
+                    if acc:
+                        accession_counts[acc] = accession_counts.get(acc, 0) + 1
+            
+            # 取最大值作为该IPR的有效拷贝数
+            # 如果没有hits，则为0
+            num_hits = max(accession_counts.values()) if accession_counts else 0
+            
+            # 累加计数（防止同一个IPR被拆分到多个键中，虽然理论上不应发生，但为了稳健）
+            # 注意：如果拆分到多个键，取最大值可能不准确，这里假设同一IPR的所有hits都在一个键下
+            # 或者如果已经拆分了，我们应该合并hits列表后再计算。
+            # 鉴于输入数据的结构，同一个IPR（不带后缀）通常在一个键下。
+            # 如果是带后缀的键，说明上游已经做过某种预处理，但为了安全，我们还是累加到real_ipr下，
+            # 但这里有个问题：如果是分批进来的，简单的累加可能会导致跨accession的错误合并。
+            # 更稳妥的做法是：维护一个全局的 {real_ipr: {accession: count}} 结构。
+            
+            if real_ipr not in counts:
+                counts[real_ipr] = {}
+            
+            for acc, count in accession_counts.items():
+                counts[real_ipr][acc] = counts[real_ipr].get(acc, 0) + count
+                
+    # 将 {ipr: {acc: count}} 转换为 {ipr: max_count}
+    final_counts = {}
+    for ipr, acc_dict in counts.items():
+        final_counts[ipr] = max(acc_dict.values()) if acc_dict else 0
+        
+    return final_counts
 
-def check_rule_match(ipr_set, rule_data):
-    """检查IPR集合是否匹配规则"""
-    # 获取规则的模式和条件
-    mode = rule_data.get("mode", [])[0] if rule_data.get("mode") else None
-    required = set(rule_data.get("required", []))
-    forbidden = set(rule_data.get("forbidden", []))
-    
-    # 移除NA
-    if "NA" in forbidden:
-        forbidden.remove("NA")
-    
+def evaluate_logic(node, ipr_counts):
+    """递归评估逻辑树"""
+    if node is None:
+        return True # 无要求则视为匹配
+        
+    if isinstance(node, str):
+        # 叶节点：检查具体domain
+        domain = node
+        required_count = 1
+        # 处理计数后缀，例如 IPR001471&2
+        if '&' in domain:
+            parts = domain.split('&')
+            domain = parts[0]
+            if len(parts) > 1 and parts[1].isdigit():
+                required_count = int(parts[1])
+        
+        actual_count = ipr_counts.get(domain, 0)
+        return actual_count >= required_count
+
+    if isinstance(node, dict):
+        op = node.get('op')
+        children = node.get('children', [])
+        
+        if op == 'AND':
+            return all(evaluate_logic(child, ipr_counts) for child in children)
+        elif op == 'OR':
+            return any(evaluate_logic(child, ipr_counts) for child in children)
+            
+    return False
+
+def check_rule_match(ipr_counts, rule_data):
+    """检查IPR计数是否匹配规则"""
     # 检查forbidden条件
-    if forbidden and not forbidden.isdisjoint(ipr_set):
-        return False
+    forbidden = rule_data.get("forbidden", [])
+    for f in forbidden:
+        if f == 'NA': continue
+        if f in ipr_counts:
+            return False
     
-    # 根据mode检查required条件
+    # 检查逻辑规则
+    logic_tree = rule_data.get("logic")
+    if logic_tree is not None:
+        return evaluate_logic(logic_tree, ipr_counts)
+        
+    # 如果没有逻辑树（兼容旧模式，虽然现在get_rule都生成逻辑树）
+    mode = rule_data.get("mode", [])[0] if rule_data.get("mode") else None
+    
+    # 如果也没有mode或mode是logic但tree是None，说明无required条件，视为匹配
+    if not mode or mode == "logic":
+        return True
+
+    # 旧模式回退（理论上不会执行到这里）
+    required = set(rule_data.get("required", []))
+    ipr_set = set(ipr_counts.keys())
+    
     if mode == "a":
-        # required必须是ipr_set的子集
         return required.issubset(ipr_set)
     elif mode == "b":
-        # required必须与ipr_set有交集
         return not required.isdisjoint(ipr_set)
     
     return False
 
-def classify_genes(input_dict):
-    """对基因进行分类并生成结果"""
+def classify_genes(input_dict, mode='specific'):
+    """对基因进行分类并生成结果
+    
+    Args:
+        input_dict (dict): 输入的基因匹配数据
+        mode (str): 分类模式，'specific' (特异性优先) 或 'score' (得分优先)
+    """
     result = {}
+    
+    print(f"[信息] 使用分类模式: {mode}")
     
     # 处理输入字典中的每个基因
     for gene_match in input_dict["result"]["match"]:
         for gene_id, gene_data in gene_match.items():
-            # 获取基因的IPR集合
-            ipr_set = get_ipr_set(gene_data)
+            # 获取基因的IPR计数
+            ipr_counts = get_ipr_counts(gene_data)
             
             # 存储匹配的所有家族
             matched_families = []
@@ -208,26 +284,204 @@ def classify_genes(input_dict):
             
             # 检查每个规则
             for rule_id, rule_data in rules_dict.items():
-                if check_rule_match(ipr_set, rule_data):
+                if check_rule_match(ipr_counts, rule_data):
                     matched_families.append(rule_data)
             
             # 如果有匹配的规则
             if matched_families:
-                # 选择最后一个匹配的规则作为主要规则
-                final_rule = matched_families[-1]
+                # 选择优先级最高的规则作为主要规则
+                # 规则文件中越靠后的规则通常越具体，但也存在例外
+                # 在这里，我们需要根据规则的特异性来选择
+                # 例如，Required条件越多的规则，优先级越高
+                # 或者，Required条件包含数量限制的规则（如&2），优先级高于普通规则
+                
+                # 获取每个IPR的最高score
+                ipr_max_scores = {}
+                # 预处理：计算每个IPR的最大Score
+                if len(gene_data) > 1 and isinstance(gene_data[1], dict):
+                    for ipr_key, hits in gene_data[1].items():
+                        real_ipr = ipr_key.split('&')[0]
+                        max_score = 0.0
+                        if isinstance(hits, list):
+                            for hit in hits:
+                                score_val = hit.get('score', 0)
+                                if str(score_val).upper() == 'STRONG':
+                                    score_val = 100.0
+                                else:
+                                    try:
+                                        score_val = float(score_val)
+                                    except:
+                                        score_val = 0.0
+                                if score_val > max_score:
+                                    max_score = score_val
+                        # 如果同一个real_ipr在多个键中出现，取最大的
+                        if max_score > ipr_max_scores.get(real_ipr, 0):
+                            ipr_max_scores[real_ipr] = max_score
+
+                def calculate_rule_score_new(rule):
+                    # 1. 规则分类：a类 vs b类
+                    # a类：只包含单一结构域或只包含OR连接的单一结构域
+                    # b类：包含AND连接，或包含数量限制（&N, N>1）
+                    
+                    if rule.get('name') == 'Others':
+                        # Others 特殊处理：权重0.1，作为最后的保底
+                        # score设为0.1，确保比任何正常的a类或b类都低
+                        return 0.1, 0.1 
+                    
+                    logic = rule.get('logic')
+                    
+                    is_b_class = False
+                    hit_weight = 0
+                    total_score = 0.0
+                    
+                    def analyze_logic(node):
+                        nonlocal is_b_class, hit_weight, total_score
+                        
+                        if isinstance(node, str):
+                            # 叶节点
+                            domain = node
+                            count = 1
+                            if '&' in node:
+                                try:
+                                    count = int(node.split('&')[1])
+                                except:
+                                    pass
+                            
+                            real_ipr = domain.split('&')[0]
+                            
+                            if count > 1:
+                                is_b_class = True
+                                hit_weight += count
+                                # 计算分数：取前count大的score之和（简化起见，这里目前只取了最大的score，如果需要取前N大，需要修改上游ipr_max_scores的逻辑）
+                                # 根据用户描述：IPR001781&2，需使用最大的score和第二大的score的加和
+                                # 这需要我们回到原始数据去获取所有score列表
+                                
+                                # 重新获取该domain的所有score并排序
+                                scores = []
+                                if len(gene_data) > 1 and isinstance(gene_data[1], dict):
+                                    for k, hits in gene_data[1].items():
+                                        if k.split('&')[0] == real_ipr:
+                                            if isinstance(hits, list):
+                                                for hit in hits:
+                                                    s = hit.get('score', 0)
+                                                    if str(s).upper() == 'STRONG': s = 100.0
+                                                    try: s = float(s)
+                                                    except: s = 0.0
+                                                    scores.append(s)
+                                scores.sort(reverse=True)
+                                # 取前count个
+                                total_score += sum(scores[:count])
+                                
+                            else:
+                                # 单一结构域，a类特征（除非被AND包裹）
+                                hit_weight += 1
+                                total_score += ipr_max_scores.get(real_ipr, 0)
+                                
+                        elif isinstance(node, dict):
+                            op = node.get('op')
+                            children = node.get('children', [])
+                            
+                            if op == 'AND':
+                                is_b_class = True
+                                for child in children:
+                                    analyze_logic(child)
+                            elif op == 'OR':
+                                # OR连接，取子规则中得分最高的那个（模拟用户描述：IPR000315:IPR049808，使用得分最高的那个）
+                                # 这里稍微复杂，因为我们要判断匹配了哪个分支
+                                # 简化处理：遍历所有子节点，看哪个匹配了且分数最高
+                                max_child_score = -1.0
+                                best_child_weight = 0
+                                child_is_b = False
+                                
+                                # 这里的逻辑稍微有点递归的复杂性，因为OR里面可能嵌套AND
+                                # 但根据定义，a类规则是 "只包含OR连接的单一结构域"
+                                # 所以如果OR里面有AND，那整个OR作为整体在上一层AND里可能就是b类的一部分
+                                # 我们先分别计算每个child的score和weight
+                                
+                                # 暂存当前状态
+                                old_score = total_score
+                                old_weight = hit_weight
+                                old_b = is_b_class
+                                
+                                best_branch_score = 0
+                                best_branch_weight = 0
+                                best_branch_b = False
+                                branch_matched = False
+                                
+                                for child in children:
+                                    # 重置累加器用于计算该分支
+                                    total_score = 0
+                                    hit_weight = 0
+                                    is_b_class = False
+                                    
+                                    # 检查该分支是否匹配（需要使用 evaluate_logic）
+                                    if evaluate_logic(child, ipr_counts):
+                                        analyze_logic(child)
+                                        branch_matched = True
+                                        if total_score > best_branch_score:
+                                            best_branch_score = total_score
+                                            best_branch_weight = hit_weight
+                                            best_branch_b = is_b_class
+                                
+                                # 恢复累加器并加上最佳分支的结果
+                                total_score = old_score + best_branch_score
+                                hit_weight = old_weight + best_branch_weight
+                                if best_branch_b: is_b_class = True # 如果最佳分支是b类，则整体变b类（虽在OR里很少见）
+                                is_b_class = is_b_class or old_b
+
+                    if logic:
+                        analyze_logic(logic)
+                    
+                    # 返回 (权重, 总分)
+                    # 如果是a类，权重设为1
+                    final_weight = hit_weight if is_b_class else 1
+                    return final_weight, total_score
+
+                # 计算所有匹配规则的 (权重, 总分)
+                rule_metrics = []
+                for rule in matched_families:
+                    weight, score = calculate_rule_score_new(rule)
+                    
+                    # 在score模式下，强制所有非Others规则的权重为1，使其只比较得分
+                    if mode == 'score' and rule.get('name') != 'Others':
+                        weight = 1.0
+                        
+                    rule_metrics.append({
+                        'rule': rule,
+                        'id': rule.get('id'), # 使用ID作为唯一标识
+                        'weight': weight,
+                        'score': score,
+                        'is_others': rule.get('name') == 'Others'
+                    })
+                
+                # 过滤掉 a 类规则（权重=1），如果存在 b 类规则（权重>1）
+                # 注意：Others 权重为 0.1，不会被视作 b 类，也会被正常的 a 类 (权重1) 压制
+                
+                max_weight = max(m['weight'] for m in rule_metrics)
+                
+                # 筛选出权重等于最大权重的规则
+                candidates = [m for m in rule_metrics if m['weight'] == max_weight]
+                
+                # 如果有多个候选，比较 score
+                candidates.sort(key=lambda x: x['score'], reverse=True)
+                
+                # 取 score 最高的
+                best_candidate = candidates[0]
+                final_rule = best_candidate['rule']
                 
                 # 收集所有匹配家族的名称
-                all_families = [rule["family"] for rule in matched_families]
-                # 使用逗号和空格连接所有家族名称
-                other_families = ", ".join(all_families)
+                # 不再输出所有匹配家族，仅保留最终分类
+                # all_families = [rule["family"] for rule in matched_families]
+                # other_families = ", ".join(all_families)
                 
                 # 构建结果字典
+                # 使用 Name 而不是 Family，但在处理过程中使用 ID 区分
                 result[gene_id] = {
                     "name": final_rule["name"],
-                    "family": final_rule["family"],
+                    "family": final_rule["name"], # Family字段也使用Name填充，保持一致
                     "type": final_rule["type"],
                     "desc": final_rule.get("desc", []),
-                    "other_family": other_families
+                    "other_family": "NA" # 不再显示其他家族
                 }
     
     # 将结果写入文件（仅在直接调用时，不在process_with_data模式下）
@@ -256,7 +510,7 @@ def classify_genes(input_dict):
         
     return result
 
-def process_with_data(result_directory, rule_file, filtered_data=None, spec_data=None, debug=False):
+def process_with_data(result_directory, rule_file, filtered_data=None, spec_data=None, debug=False, mode='specific'):
     """
     使用内存中的数据进行转录因子分类处理
     
@@ -266,6 +520,7 @@ def process_with_data(result_directory, rule_file, filtered_data=None, spec_data
         filtered_data (dict, optional): 内存中的过滤数据
         spec_data (dict, optional): 内存中的spec数据
         debug (bool): 是否启用调试模式
+        mode (str): 分类模式，'specific' (默认) 或 'score'
     
     Returns:
         dict: 分类结果
@@ -310,7 +565,7 @@ def process_with_data(result_directory, rule_file, filtered_data=None, spec_data
     merged_dict = merge_results(current_filtered_result, current_spec_result)
     
     # 进行分类
-    classification_result = classify_genes(merged_dict)
+    classification_result = classify_genes(merged_dict, mode=mode)
     
     return classification_result
 

@@ -2,6 +2,7 @@ import json
 import os
 import argparse
 
+
 def load_input_data(input_file):
     """加载输入JSON文件"""
     try:
@@ -17,22 +18,77 @@ def load_input_data(input_file):
         print(f"错误：读取文件失败 - {e}")
         return None
 
-def is_valid_score(score, score_threshold=1.0):
+
+def parse_specific_thresholds_from_rule(rule_file_path):
+    """从 rule.txt 中解析所有块内的 'Score:' 行为全局特定条目阈值映射。"""
+    thresholds = {}
+    try:
+        with open(rule_file_path, 'r', encoding='utf-8') as f:
+            blocks = ''.join(f.readlines()).strip().split('//')
+        for block in blocks:
+            block = block.strip()
+            if not block or block.startswith('#'):
+                continue
+            for raw_line in block.split('\n'):
+                line = raw_line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if not line.startswith('Score:'):
+                    continue
+                content = line[len('Score:'):].strip()
+                parts = [p for p in content.split(':') if p]
+                for part in parts:
+                    part = part.strip()
+                    if '(' in part and part.endswith(')'):
+                        try:
+                            name, val_str = part.split('(', 1)
+                            name = name.strip()
+                            val = float(val_str[:-1])
+                            if name:
+                                thresholds[name] = max(val, thresholds.get(name, float('-inf')))
+                        except Exception:
+                            continue
+    except Exception:
+        # 解析失败时返回空映射，保持流程继续
+        return {}
+    return thresholds
+
+
+def load_specific_thresholds():
+    """定位并加载 db/rule.txt 的特定条目阈值映射。"""
+    # rule.txt 位于项目根目录下的 db 文件夹；get_json.py 在 module 目录
+    project_root = os.path.dirname(os.path.dirname(__file__))
+    rule_file = os.path.join(project_root, 'db', 'rule.txt')
+    if os.path.exists(rule_file):
+        return parse_specific_thresholds_from_rule(rule_file)
+    return {}
+
+
+def is_valid_score(score, score_threshold=1.0, accession=None, specific_thresholds=None):
     """
-    检查分数是否有效
+    检查分数是否有效：
+    - 若命中特定条目阈值（按 accession），采用 score >= 特定阈值；
+    - 否则采用 score > 全局阈值；
+    - 'STRONG' 直接通过。
     """
     if score == "STRONG":
         return True
     try:
-        return float(score) > score_threshold
+        s = float(score)
     except (ValueError, TypeError):
         return False
+
+    if specific_thresholds and accession in specific_thresholds:
+        return s >= float(specific_thresholds[accession])
+    return s > float(score_threshold)
+
 
 def get_score_value(score):
     """获取分数值"""
     return 100 if score == "STRONG" else float(score or 0)
 
-def process_ipr_groups(gene_data, gene_id, output_dir, debug=False, score_threshold=1.0):
+
+def process_ipr_groups(gene_data, gene_id, output_dir, debug=False, score_threshold=1.0, specific_thresholds=None):
     """处理IPR分组数据"""
     new_gene_data = {}
     
@@ -40,8 +96,11 @@ def process_ipr_groups(gene_data, gene_id, output_dir, debug=False, score_thresh
     overlap_records = []
     
     for ipr, matches in gene_data[1].items():
-        # 过滤掉不满足score条件的匹配
-        valid_matches = [m for m in matches if is_valid_score(m.get("score"), score_threshold)]
+        # 过滤掉不满足score条件的匹配，优先考虑特定条目阈值
+        valid_matches = [
+            m for m in matches
+            if is_valid_score(m.get("score"), score_threshold, accession=m.get("accession"), specific_thresholds=specific_thresholds)
+        ]
         
         if not valid_matches:
             continue
@@ -165,12 +224,16 @@ def process_ipr_groups(gene_data, gene_id, output_dir, debug=False, score_thresh
     
     return new_gene_data
 #从json中读取数据
+
 def process_data(input_file, output_dir=None, debug=False, score_threshold=1.0):
     # 加载输入数据
     old_data = load_input_data(input_file)
     if old_data is None:
         return None, None
     
+    # 加载全局特定条目分数阈值映射（来自 db/rule.txt 的 Score 行）
+    specific_thresholds = load_specific_thresholds()
+
     # 构建新结构
     new_result = {
         "result": {
@@ -253,8 +316,8 @@ def process_data(input_file, output_dir=None, debug=False, score_threshold=1.0):
                 # 添加到原始格式列表
                 gene_data_list.append({gene_id: gene_data})
                 
-                # 处理新格式
-                filtered_data = process_ipr_groups(gene_data, gene_id, output_dir or "", debug, score_threshold)
+                # 处理新格式（传递特定条目阈值映射）
+                filtered_data = process_ipr_groups(gene_data, gene_id, output_dir or "", debug, score_threshold, specific_thresholds=specific_thresholds)
                 if filtered_data:
                     # 构建与test版本一致的数据结构
                     filtered_gene_data = [
@@ -280,14 +343,15 @@ def process_data(input_file, output_dir=None, debug=False, score_threshold=1.0):
         if debug:
             with open(os.path.join(output_dir, "raw_interproscan_data.json"), "w") as f:
                 json.dump(new_result, f, indent=2)
-            print("✅ 转换完成，结果已保存为 processed_ipr_domains.json 和 raw_interproscan_data.json（调试模式）")
+            print("转换完成，结果已保存为 processed_ipr_domains.json 和 raw_interproscan_data.json（调试模式）")
         else:
-            print("✅ 转换完成，结果已保存为 processed_ipr_domains.json")
+            print("转换完成，结果已保存为 processed_ipr_domains.json")
     else:
-        print("✅ 数据处理完成，返回内存中的结果")
+        print("数据处理完成，返回内存中的结果")
     
     # 返回处理后的数据
     return filtered_result, new_result
+
 
 def main():
     # 添加命令行参数解析
@@ -308,10 +372,11 @@ def main():
     )
     
     if filtered_result is None:
-        print("❌ 数据处理失败")
+        print("数据处理失败")
         return False
     
     return True
+
 
 if __name__ == "__main__":
     main()

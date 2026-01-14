@@ -84,6 +84,33 @@ class FastaValidator:
         except Exception as e:
             self.errors.append(f"序列验证过程中出错: {str(e)}")
             return False
+
+    def validate_sequences(self, sequences):
+        try:
+            self.protein_count = 0
+            for item in sequences:
+                seq_str = str(item if isinstance(item, str) else item.get('sequence', '')).upper()
+                if '*' in seq_str:
+                    self.errors.append("序列包含禁止字符: *")
+                    continue
+                seq_chars = set(seq_str)
+                if len(seq_chars) == 0:
+                    self.errors.append("空序列")
+                    continue
+                valid_chars = seq_chars & self.extended_amino_acids
+                valid_ratio = len(valid_chars) / len(seq_chars)
+                if valid_ratio < 0.8:
+                    invalid_chars = seq_chars - self.extended_amino_acids
+                    self.errors.append(f"序列包含非蛋白质字符: {', '.join(invalid_chars)}")
+                    continue
+                self.protein_count += 1
+            if self.protein_count == 0:
+                self.errors.append("没有找到有效的蛋白质序列")
+                return False
+            return True
+        except Exception as e:
+            self.errors.append(f"序列验证过程中出错: {str(e)}")
+            return False
     
 
     

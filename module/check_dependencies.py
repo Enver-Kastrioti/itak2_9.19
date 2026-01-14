@@ -124,6 +124,17 @@ class DependencyChecker:
                     return f"PyTorch {torch_version} - GPU支持不可用，将使用CPU进行计算"
         except ImportError:
             return "PyTorch未安装，无法检查GPU支持"
+
+    def check_biopython_features(self):
+        try:
+            import Bio
+            from Bio.Seq import Seq
+            ver = getattr(Bio, "__version__", "unknown")
+            _ = Seq("ATG").translate(table=1)
+            _ = Seq("ATG").reverse_complement()
+            return True, f"Biopython 版本: {ver}，Seq.translate/reverse_complement 可用"
+        except Exception as e:
+            return False, f"Biopython功能检查失败: {e}"
     
     def check_prediction_dependencies(self):
 
@@ -144,47 +155,39 @@ class DependencyChecker:
     
     def ensure_db_extracted(self):
         """
-        确保db文件夹已解压。如果db文件夹不存在但db.tar.gz存在，则自动解压。
+        确保db文件夹已解压。如果db文件夹不存在，尝试从压缩包解压或从GitHub下载。
+        使用 module/db_manager.py 实现。
         
         Returns:
             bool: 如果db文件夹可用返回True，否则返回False
         """
         try:
-            # 如果db文件夹已存在，直接返回True
-            if self.db_dir.exists() and self.db_dir.is_dir():
-                return True
+            # 动态导入 db_manager 模块
+            # 注意：DependencyChecker 可能在 module 目录中，也可能在上一级，
+            # 但 db_manager.py 位于 module/ 目录中。
+            # 如果 DependencyChecker 位于 module/check_dependencies.py，则 module/db_manager.py 位于同一目录
             
-            # 如果db文件夹不存在，检查是否有压缩文件
-            if not self.db_archive.exists():
-                print(f"  [错误] db文件夹和压缩文件都不存在")
-                print(f"    缺失: {self.db_dir}")
-                print(f"    缺失: {self.db_archive}")
+            # 获取 db_manager.py 的路径
+            current_dir = Path(__file__).parent.absolute()
+            db_manager_path = current_dir / "db_manager.py"
+            
+            if not db_manager_path.exists():
+                print(f"  [错误] db_manager模块不存在: {db_manager_path}")
+                # 回退到旧逻辑 (仅检查存在性)
+                if self.db_dir.exists() and self.db_dir.is_dir():
+                    return True
                 return False
-            
-            print(f"  [信息] 检测到db文件夹不存在，正在从 {self.db_archive} 解压...")
-            
-            # 解压db.tar.gz文件
-            with tarfile.open(self.db_archive, 'r:gz') as tar:
-                tar.extractall(path=self.script_dir)
-            
-            # 验证解压是否成功
-            if self.db_dir.exists() and self.db_dir.is_dir():
-                print(f"  [成功] db文件夹解压成功: {self.db_dir}")
                 
-                # 删除压缩文件
-                try:
-                    self.db_archive.unlink()
-                    print(f"  [信息] 已删除原始压缩文件: {self.db_archive}")
-                except Exception as e:
-                    print(f"  [警告] 删除压缩文件失败: {e}")
-                
-                return True
-            else:
-                print(f"  [错误] 解压后db文件夹仍不存在: {self.db_dir}")
-                return False
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("db_manager", db_manager_path)
+            db_manager = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(db_manager)
+            
+            # 使用项目根目录调用 setup_db
+            return db_manager.setup_db(self.script_dir)
                 
         except Exception as e:
-            print(f"  [错误] 解压db文件夹时出错: {e}")
+            print(f"  [错误] 检查/准备db文件夹时出错: {e}")
             return False
 
     def run_full_check(self):
@@ -222,6 +225,16 @@ class DependencyChecker:
                 print(f"  [警告] {package:<15} - {description}")
                 self.missing_optional_dependencies.append(f"Python包: {package}")
                 print(f"      注意: 缺少{package}不会影响基本功能，但预测功能将不可用")
+
+        # 额外检查：Biopython关键功能
+        print("\n检查Biopython关键功能:")
+        ok, msg = self.check_biopython_features()
+        if ok:
+            print(f"  [成功] {msg}")
+        else:
+            print(f"  [错误] {msg}")
+            self.missing_dependencies.append("Biopython关键功能")
+            all_dependencies_met = False
         
         # 检查外部工具
         print("\n检查外部工具:")
