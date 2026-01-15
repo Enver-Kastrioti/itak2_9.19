@@ -216,8 +216,13 @@ class DependencyChecker:
             print(f"  [错误] 检查/准备db文件夹时出错: {e}")
             return False
 
-    def run_full_check(self):
-        """运行完整的依赖检查"""
+    def run_full_check(self, check_predict=False):
+        """
+        运行完整的依赖检查
+        
+        Args:
+            check_predict (bool): 是否检查预测功能相关的依赖（如PyTorch）
+        """
         print("开始检查iTAK 2.0依赖...")
         print("=" * 60)
         
@@ -242,18 +247,27 @@ class DependencyChecker:
                 self.missing_dependencies.append(f"Python包: {package}")
                 all_dependencies_met = False
         
-        # 检查可选的Python包
+        # 检查可选的Python包（仅当启用预测检查时检查PyTorch）
         print("\n检查可选Python包依赖:")
         for package, description in self.optional_python_packages.items():
+            # 如果不是检查预测模式，且包是torch，则跳过
+            if package == 'torch' and not check_predict:
+                continue
+                
             if package == 'torch':
                 print("  [信息] 正在检查PyTorch（可能需要几秒钟）...")
             
             if self.check_python_package(package):
                 print(f"  [成功] {package:<15} - {description}")
             else:
-                print(f"  [警告] {package:<15} - {description}")
-                self.missing_optional_dependencies.append(f"Python包: {package}")
-                print(f"      注意: 缺少{package}不会影响基本功能，但预测功能将不可用")
+                # 只有在明确要求检查预测功能时，缺少torch才算是错误或警告
+                if check_predict and package == 'torch':
+                    print(f"  [警告] {package:<15} - {description}")
+                    self.missing_optional_dependencies.append(f"Python包: {package}")
+                    print(f"      注意: 缺少{package}导致预测功能不可用")
+                else:
+                    print(f"  [警告] {package:<15} - {description}")
+                    print(f"      注意: 缺少{package}不会影响基本功能")
 
         # 额外检查：Biopython关键功能
         print("\n检查Biopython关键功能:")
@@ -278,6 +292,10 @@ class DependencyChecker:
         # 检查关键文件
         print("\n检查关键文件:")
         for file_name, file_path in self.required_files.items():
+            # 如果不检查预测功能，跳过预测相关文件
+            if not check_predict and file_name in ['predict.py', 'model.pth']:
+                continue
+                
             if self.check_file_exists(file_path):
                 print(f"  [成功] {file_name:<20} - {file_path}")
             else:
@@ -294,13 +312,14 @@ class DependencyChecker:
             self.missing_dependencies.append("InterProScan配置")
             all_dependencies_met = False
         
-        # 检查PyTorch GPU支持（仅在PyTorch可用时）
-        print("\n检查GPU支持（预测功能相关）:")
-        if self.check_python_package('torch'):
-            gpu_status = self.check_pytorch_gpu_support()
-            print(f"  [信息] {gpu_status}")
-        else:
-            print("  [警告] PyTorch未安装，无法检查GPU支持状态")
+        # 检查PyTorch GPU支持（仅在PyTorch可用且启用预测检查时）
+        if check_predict:
+            print("\n检查GPU支持（预测功能相关）:")
+            if self.check_python_package('torch'):
+                gpu_status = self.check_pytorch_gpu_support()
+                print(f"  [信息] {gpu_status}")
+            else:
+                print("  [警告] PyTorch未安装，无法检查GPU支持状态")
         
         # 显示警告信息
         if self.warnings:
@@ -316,7 +335,8 @@ class DependencyChecker:
                 print("[警告] 注意：以下可选依赖缺失，某些功能可能不可用:")
                 for dep in self.missing_optional_dependencies:
                     print(f"  - {dep}")
-                print("  如需使用预测功能，请安装PyTorch。")
+                if check_predict:
+                    print("  如需使用预测功能，请安装PyTorch。")
         else:
             print("[错误] 发现缺失的必需依赖！请安装以下组件:")
             for dep in self.missing_dependencies:

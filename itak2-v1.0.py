@@ -1151,7 +1151,10 @@ def main():
     if not args.skip_deps_check and DependencyChecker:
         print(" 正在检查程序依赖...")
         checker = DependencyChecker()
-        dependencies_ok = checker.run_full_check()
+        
+        # 根据命令行参数决定是否检查预测依赖
+        check_predict = args.predict
+        dependencies_ok = checker.run_full_check(check_predict=check_predict)
         
         # 如果db缺失，run_full_check 会尝试下载并解压。
         # 如果下载成功，dependencies_ok 应该为 True（前提是其他依赖也满足）。
@@ -1164,7 +1167,7 @@ def main():
                  # 如果db现在好了，但刚才报错了，可能是有其他依赖缺失
                  # 重新运行检查以确认
                  print("\n[信息] 数据库已准备就绪，重新检查所有依赖...")
-                 dependencies_ok = checker.run_full_check()
+                 dependencies_ok = checker.run_full_check(check_predict=check_predict)
 
         if not dependencies_ok:
             print("\n[错误] 依赖检查失败！程序可能无法正常运行。")

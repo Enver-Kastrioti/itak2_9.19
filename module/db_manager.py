@@ -42,9 +42,11 @@ def check_db_integrity(db_path):
             
     return True
 
+import subprocess
+
 def download_file(url, output_path):
     """
-    Download a file from a URL to a local path with progress bar.
+    Download a file from a URL to a local path using wget -c.
     
     Args:
         url (str): URL to download from.
@@ -52,16 +54,26 @@ def download_file(url, output_path):
     """
     print(f"Downloading from {url}...")
     try:
-        def progress_hook(count, block_size, total_size):
-            percent = int(count * block_size * 100 / total_size)
-            sys.stdout.write(f"\rDownloading: {percent}%")
-            sys.stdout.flush()
-
-        urllib.request.urlretrieve(url, str(output_path), reporthook=progress_hook)
-        print("\nDownload complete.")
-        return True
-    except Exception as e:
+        # Check if wget is installed
+        if shutil.which("wget") is None:
+            print("Error: wget is not installed.")
+            return False
+            
+        cmd = ["wget", "-c", url, "-O", str(output_path)]
+        result = subprocess.run(cmd, check=True)
+        
+        if result.returncode == 0:
+            print("\nDownload complete.")
+            return True
+        else:
+            print(f"\nwget exited with code {result.returncode}")
+            return False
+            
+    except subprocess.CalledProcessError as e:
         print(f"\nError downloading file: {e}")
+        return False
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
         return False
 
 def extract_tar_gz(tar_path, extract_path):
