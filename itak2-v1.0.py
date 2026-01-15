@@ -193,6 +193,22 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             return False
             
         rule_file = SCRIPT_DIR / "rule.txt"
+
+        # 在测试模式下，ipr_file可能需要根据analysis_fasta的文件名进行调整
+        # 因为run_test_mode中复制文件时可能使用了不同的文件名
+        if not ipr_file.exists():
+            # 尝试查找其他可能的JSON文件
+            # 1. 尝试直接使用原始FASTA文件名的JSON (如果analysis_fasta是处理后的)
+            original_json_file = project_output / "InterproScan" / f"{Path(fasta_file).name}.json"
+            if original_json_file.exists():
+                print(f"警告: 未找到 {ipr_file.name}，使用 {original_json_file.name} 替代")
+                ipr_file = original_json_file
+            else:
+                # 2. 尝试查找目录下的唯一JSON文件
+                json_files = list((project_output / "InterproScan").glob("*.json"))
+                if len(json_files) == 1:
+                    print(f"警告: 未找到 {ipr_file.name}，使用目录中唯一的JSON文件: {json_files[0].name}")
+                    ipr_file = json_files[0]
         
         # 检查必需文件是否存在
         missing_files = []
@@ -229,6 +245,7 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
         
         # 步骤1: 运行jsonbuild模块（支持内存数据传递）
         print("\n步骤1: 运行jsonbuild模块...")
+        
         jsonbuild_result = run_jsonbuild_module(str(ipr_file), result_dir, debug=debug, score_threshold=score_threshold)
         
         # 检查jsonbuild结果
@@ -646,6 +663,21 @@ def run_hmmscan(fasta_file, output_dir):
         print(f"错误: FASTA文件不存在: {fasta_file}")
         return False
     
+    # 优先使用内部hmmscan (位于 db/interproscan/bin/hmmer/hmmer3/hmmscan)
+    # 路径: db/interproscan/bin/hmmer/hmmer3/hmmscan
+    internal_hmmscan = DB_DIR / "interproscan" / "bin" / "hmmer" / "hmmer3" / "hmmscan"
+    
+    if internal_hmmscan.exists() and os.access(internal_hmmscan, os.X_OK):
+        hmmscan_executable = str(internal_hmmscan)
+        print(f"使用内置hmmscan: {hmmscan_executable}")
+    else:
+        # 回退到系统hmmscan
+        hmmscan_executable = "hmmscan"
+        if shutil.which("hmmscan") is None:
+             print("错误: 找不到hmmscan可执行文件（内置或系统路径均未找到）")
+             return False
+        print(f"使用系统hmmscan: {hmmscan_executable}")
+
     try:
         # 创建hmmscan输出目录
         hmmscan_output_dir = Path(output_dir) / "hmmscan"
@@ -656,7 +688,7 @@ def run_hmmscan(fasta_file, output_dir):
         
         # 构建hmmscan命令
         cmd = [
-            "hmmscan",
+            hmmscan_executable,
             "--tblout", str(output_file),
             "--noali",
             str(hmm_db),
@@ -1097,8 +1129,8 @@ def main():
     # 功能选项
     parser.add_argument('--predict', action='store_true', 
                        help='启用预测功能（将序列输入到模型中进行预测，预测结果作为后续分析的输入）')
-    parser.add_argument('--extract-sequences', action='store_true', default=True, 
-                       help='提取预测的TF序列（仅在使用--predict时有效）')
+    # parser.add_argument('--extract-sequences', action='store_true', default=True, 
+    #                    help='提取预测的TF序列（仅在使用--predict时有效）')
     
     # 测试模式参数
     parser.add_argument('-test', '--test-mode', action='store_true',
@@ -1122,8 +1154,8 @@ def main():
                        help='InterProScan结果的score阈值，只有大于此值的结果才会被保留 (默认: 1.0)')
     
     # 分类模式参数
-    parser.add_argument('--classification-mode', choices=['specific', 'score'], default='specific',
-                       help="分类模式: 'specific' (特异性优先，默认) 或 'score' (得分优先)")
+    parser.add_argument('--classification-mode', choices=['specific', 'score'], default='score',
+                       help="分类模式: 'specific' (特异性优先) 或 'score' (得分优先，默认)")
     
     # 预测模式参数
     parser.add_argument('--predict-mode', choices=['fast', 'full'], default='fast',
@@ -1281,7 +1313,7 @@ def main():
             threshold=args.threshold,
             fasta_file=args.input,
             output=args.output,
-            extract_sequences=args.extract_sequences,
+            extract_sequences=True,  # 强制为True，因为这是必需步骤
             run_interproscan_analysis=True,  # 默认启用
             run_hmmscan_analysis=True,       # 默认启用
             appl_list=args.appl,

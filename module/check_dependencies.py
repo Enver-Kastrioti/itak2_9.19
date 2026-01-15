@@ -46,12 +46,16 @@ class DependencyChecker:
         }
         
         # 定义所需的外部工具
+        # hmmscan 已更改为优先使用内置，如果内置存在，则此处hmmscan不再是强制系统级依赖
+        # 但为了兼容性，我们暂时保留检查，但在 check_external_tool 中做特殊处理
         self.required_external_tools = {
-            'hmmscan': 'HMMER包中的hmmscan工具，用于HMM搜索',
             'java': 'Java运行环境，InterProScan需要',
             'perl': 'Perl解释器，InterProScan需要',
             'python3': 'Python3解释器'
         }
+        
+        # hmmscan 单独处理，因为可能使用内置的
+        self.hmmscan_tool_name = 'hmmscan'
         
         # 定义关键文件路径（模块在module目录中，需要向上一级找到项目根目录）
         self.script_dir = Path(__file__).parent.parent.absolute()
@@ -83,8 +87,20 @@ class DependencyChecker:
             return False
     
     def check_external_tool(self, tool_name):
-
         return shutil.which(tool_name) is not None
+
+    def check_hmmscan(self):
+        """检查hmmscan是否存在（内置或系统）"""
+        # 1. 检查内置hmmscan
+        internal_hmmscan = self.db_dir / "interproscan" / "bin" / "hmmer" / "hmmer3" / "hmmscan"
+        if internal_hmmscan.exists() and os.access(internal_hmmscan, os.X_OK):
+            return True, f"使用内置hmmscan: {internal_hmmscan}"
+            
+        # 2. 检查系统hmmscan
+        if shutil.which("hmmscan"):
+            return True, "使用系统hmmscan"
+            
+        return False, "未找到hmmscan（内置或系统路径均未找到）"
     
     def check_file_exists(self, file_path):
 
@@ -281,6 +297,16 @@ class DependencyChecker:
         
         # 检查外部工具
         print("\n检查外部工具:")
+        
+        # 检查hmmscan
+        hmm_ok, hmm_msg = self.check_hmmscan()
+        if hmm_ok:
+            print(f"  [成功] hmmscan         - {hmm_msg}")
+        else:
+            print(f"  [错误] hmmscan         - {hmm_msg}")
+            self.missing_dependencies.append("外部工具: hmmscan")
+            all_dependencies_met = False
+            
         for tool, description in self.required_external_tools.items():
             if self.check_external_tool(tool):
                 print(f"  [成功] {tool:<15} - {description}")
