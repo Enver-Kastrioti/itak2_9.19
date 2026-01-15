@@ -66,7 +66,16 @@ class DependencyChecker:
         }
     
     def check_python_package(self, package_name):
-
+        """检查Python包是否安装"""
+        # 对于torch，使用importlib.util.find_spec进行快速检查，避免导入开销
+        if package_name == 'torch':
+            try:
+                if importlib.util.find_spec(package_name) is not None:
+                    return True
+            except Exception:
+                pass
+            return False
+            
         try:
             importlib.import_module(package_name)
             return True
@@ -104,8 +113,25 @@ class DependencyChecker:
         return True
     
     def check_pytorch_gpu_support(self):
-
+        """检查PyTorch是否支持GPU（避免直接import torch）"""
         try:
+            # 尝试使用轻量级方式检查，如果不行再尝试导入
+            # 由于获取CUDA版本等信息必须导入torch，这里我们只在用户明确需要详细信息时才导入
+            # 在依赖检查阶段，我们可以只通过 find_spec 确认其存在，
+            # 而将耗时的 GPU 检查推迟到实际运行时，或者仅在用户请求详细调试信息时运行。
+            
+            # 为了解决卡顿问题，这里修改为：仅在torch已安装的情况下，
+            # 尝试快速返回状态，不再强制进行完整的CUDA初始化检查，
+            # 除非我们确实想知道GPU信息。
+            
+            if importlib.util.find_spec('torch') is None:
+                return "PyTorch未安装"
+
+            # 警告：这里导入torch仍然会慢，但为了获取版本和CUDA信息是必须的。
+            # 如果想彻底避免卡顿，可以在此处跳过详细GPU检查，仅返回"PyTorch已安装"。
+            # 但为了保持功能，我们保留导入，但在 check_python_package 中我们已经优化了存在性检查。
+            # 此函数仅在 run_full_check 的最后阶段调用。
+            
             import torch
             
             # 检查PyTorch版本
@@ -219,6 +245,9 @@ class DependencyChecker:
         # 检查可选的Python包
         print("\n检查可选Python包依赖:")
         for package, description in self.optional_python_packages.items():
+            if package == 'torch':
+                print("  [信息] 正在检查PyTorch（可能需要几秒钟）...")
+            
             if self.check_python_package(package):
                 print(f"  [成功] {package:<15} - {description}")
             else:
