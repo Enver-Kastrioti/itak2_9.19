@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-iTAK 2.0 依赖检测模块
-检查程序运行所需的Python包和外部工具是否已安装
+iTAK 2.0 dependency checking module.
+
+Checks whether the required Python packages and external tools are available.
 """
 
 import sys
@@ -14,64 +15,65 @@ import os
 import tarfile
 
 class DependencyChecker:
-    """依赖检测器类"""
+    """Dependency checker."""
     
-    def __init__(self):
+    def __init__(self, interproscan_path=None):
         self.missing_dependencies = []
         self.missing_optional_dependencies = []
         self.warnings = []
+        self.interproscan_path = Path(interproscan_path) if interproscan_path else None
         
-        # 定义必需的Python包（核心功能必须）
+        # Required Python packages (needed for core functionality)
         self.required_python_packages = {
-            'Bio': 'Biopython生物信息学库',
-            'pandas': 'Pandas数据处理库',
-            'numpy': 'NumPy数值计算库',
-            'json': 'JSON处理库（标准库）',
-            'csv': 'CSV处理库（标准库）',
-            'argparse': '命令行参数解析库（标准库）',
-            'subprocess': '子进程管理库（标准库）',
-            'pathlib': '路径处理库（标准库）',
-            'os': '操作系统接口库（标准库）',
-            'sys': '系统相关库（标准库）',
-            'time': '时间处理库（标准库）',
-            'datetime': '日期时间库（标准库）',
-            'shutil': '文件操作库（标准库）',
-            'collections': '集合类库（标准库）',
-            'warnings': '警告处理库（标准库）'
+            'Bio': 'Biopython (bioinformatics library)',
+            'pandas': 'pandas (data analysis library)',
+            'numpy': 'NumPy (numerical computing library)',
+            'json': 'json (standard library)',
+            'csv': 'csv (standard library)',
+            'argparse': 'argparse (standard library)',
+            'subprocess': 'subprocess (standard library)',
+            'pathlib': 'pathlib (standard library)',
+            'os': 'os (standard library)',
+            'sys': 'sys (standard library)',
+            'time': 'time (standard library)',
+            'datetime': 'datetime (standard library)',
+            'shutil': 'shutil (standard library)',
+            'collections': 'collections (standard library)',
+            'warnings': 'warnings (standard library)'
         }
         
-        # 定义可选的Python包（特定功能需要）
+        # Optional Python packages (needed for specific features)
         self.optional_python_packages = {
-            'torch': 'PyTorch深度学习框架（仅预测功能需要）'
+            'torch': 'PyTorch (required only for prediction)'
         }
         
-        # 定义所需的外部工具
-        # hmmscan 已更改为优先使用内置，如果内置存在，则此处hmmscan不再是强制系统级依赖
-        # 但为了兼容性，我们暂时保留检查，但在 check_external_tool 中做特殊处理
+        # Required external tools
+        # hmmscan is preferentially resolved from the bundled InterProScan distribution when present;
+        # for compatibility we keep checks, but handle hmmscan specially.
         self.required_external_tools = {
-            'java': 'Java运行环境，InterProScan需要',
-            'perl': 'Perl解释器，InterProScan需要',
-            'python3': 'Python3解释器'
+            'java': 'Java runtime (required by InterProScan)',
+            'perl': 'Perl interpreter (required by InterProScan)',
+            'python3': 'Python 3 interpreter'
         }
         
-        # hmmscan 单独处理，因为可能使用内置的
+        # hmmscan is handled separately because it may be bundled
         self.hmmscan_tool_name = 'hmmscan'
         
-        # 定义关键文件路径（模块在module目录中，需要向上一级找到项目根目录）
+        # Key paths (module lives under module/, so project root is one level up)
         self.script_dir = Path(__file__).parent.parent.absolute()
         self.db_dir = self.script_dir / "db"
         self.db_archive = self.script_dir / "db.tar.gz"
         
         self.required_files = {
-            'interproscan.sh': self.script_dir / "db" / "interproscan" / "interproscan.sh",
-            'self_build.hmm': self.script_dir / "db" / "self_build_hmm" / "self_build.hmm",
+            'interproscan.sh': self.interproscan_path if self.interproscan_path else self.script_dir / "db" / "interproscan" / "interproscan.sh",
+            'self_build.hmm': self.script_dir / "hmm" / "self_build.hmm",
             'predict.py': self.script_dir / "pre_model" / "predict.py",
             'model.pth': self.script_dir / "pre_model" / "model.pth"
         }
     
     def check_python_package(self, package_name):
-        """检查Python包是否安装"""
-        # 对于torch，使用importlib.util.find_spec进行快速检查，避免导入开销
+        """Check whether a Python package is installed."""
+        # For torch, use importlib.util.find_spec for a fast existence check
         if package_name == 'torch':
             try:
                 if importlib.util.find_spec(package_name) is not None:
@@ -90,82 +92,118 @@ class DependencyChecker:
         return shutil.which(tool_name) is not None
 
     def check_hmmscan(self):
-        """检查hmmscan是否存在（内置或系统）"""
-        # 1. 检查内置hmmscan
+        """Check whether hmmscan is available (bundled or system)."""
+        # 0) If an external InterProScan path is provided, prioritize its bundled hmmscan
+        if self.interproscan_path:
+            interpro_dir = self.interproscan_path.parent
+            hmmscan_candidates = []
+            # Common path: bin/hmmer/hmmer3/hmmscan
+            hmmscan_candidates.append(interpro_dir / "bin" / "hmmer" / "hmmer3" / "hmmscan")
+            # Common variant: bin/hmmer/hmmscan
+            hmmscan_candidates.append(interpro_dir / "bin" / "hmmer" / "hmmscan")
+            # Common variant: bin/hmmscan
+            hmmscan_candidates.append(interpro_dir / "bin" / "hmmscan")
+            # Search within hmmer3 directory (fallback)
+            hmmer3_dir = interpro_dir / "bin" / "hmmer" / "hmmer3"
+            if hmmer3_dir.exists():
+                for path in hmmer3_dir.rglob("hmmscan"):
+                    hmmscan_candidates.append(path)
+            # Search within bin directory (final fallback)
+            bin_dir = interpro_dir / "bin"
+            if bin_dir.exists():
+                for path in bin_dir.rglob("hmmscan"):
+                    hmmscan_candidates.append(path)
+            for cand in hmmscan_candidates:
+                try:
+                    if cand.exists() and os.access(cand, os.X_OK) and cand.is_file():
+                        return True, f"Using bundled hmmscan from custom InterProScan: {cand}"
+                except Exception:
+                    pass
+        
+        # 1) Check bundled hmmscan
         internal_hmmscan = self.db_dir / "interproscan" / "bin" / "hmmer" / "hmmer3" / "hmmscan"
         if internal_hmmscan.exists() and os.access(internal_hmmscan, os.X_OK):
-            return True, f"使用内置hmmscan: {internal_hmmscan}"
+            return True, f"Using bundled hmmscan: {internal_hmmscan}"
             
-        # 2. 检查系统hmmscan
+        # 2) Check system hmmscan
         if shutil.which("hmmscan"):
-            return True, "使用系统hmmscan"
+            return True, "Using system hmmscan"
             
-        return False, "未找到hmmscan（内置或系统路径均未找到）"
+        return False, "hmmscan was not found (neither bundled nor on system PATH)"
     
     def check_file_exists(self, file_path):
 
         return file_path.exists()
     
     def check_interproscan_setup(self):
+        # If an external InterProScan path is specified, validate that installation
+        if self.interproscan_path:
+            if not self.interproscan_path.exists():
+                return False
+                
+            if not os.access(self.interproscan_path, os.X_OK):
+                self.warnings.append(f"Specified InterProScan script is not executable: {self.interproscan_path}")
+                return False
+                
+            # Check InterProScan data directory
+            interproscan_dir = self.interproscan_path.parent
+            data_dir = interproscan_dir / "data"
+            
+            if not data_dir.exists():
+                self.warnings.append(f"InterProScan data directory does not exist: {data_dir}")
+                return False
+                
+            return True
 
         interproscan_script = self.required_files['interproscan.sh']
         
         if not interproscan_script.exists():
             return False
         
-        # 检查InterProScan脚本是否可执行
+        # Check that the InterProScan script is executable
         if not os.access(interproscan_script, os.X_OK):
-            self.warnings.append(f"InterProScan脚本不可执行: {interproscan_script}")
+            self.warnings.append(f"InterProScan script is not executable: {interproscan_script}")
             return False
         
-        # 检查InterProScan数据目录
+        # Check InterProScan data directory
         interproscan_dir = interproscan_script.parent
         data_dir = interproscan_dir / "data"
         
         if not data_dir.exists():
-            self.warnings.append(f"InterProScan数据目录不存在: {data_dir}")
+            self.warnings.append(f"InterProScan data directory does not exist: {data_dir}")
             return False
         
         return True
     
     def check_pytorch_gpu_support(self):
-        """检查PyTorch是否支持GPU（避免直接import torch）"""
+        """Check whether PyTorch has GPU support (may require importing torch)."""
         try:
-            # 尝试使用轻量级方式检查，如果不行再尝试导入
-            # 由于获取CUDA版本等信息必须导入torch，这里我们只在用户明确需要详细信息时才导入
-            # 在依赖检查阶段，我们可以只通过 find_spec 确认其存在，
-            # 而将耗时的 GPU 检查推迟到实际运行时，或者仅在用户请求详细调试信息时运行。
-            
-            # 为了解决卡顿问题，这里修改为：仅在torch已安装的情况下，
-            # 尝试快速返回状态，不再强制进行完整的CUDA初始化检查，
-            # 除非我们确实想知道GPU信息。
+            # We avoid heavy CUDA initialization unless the user explicitly requests GPU diagnostics.
+            # Here we only attempt detailed checks when torch is installed.
             
             if importlib.util.find_spec('torch') is None:
-                return "PyTorch未安装"
+                return "PyTorch is not installed"
 
-            # 警告：这里导入torch仍然会慢，但为了获取版本和CUDA信息是必须的。
-            # 如果想彻底避免卡顿，可以在此处跳过详细GPU检查，仅返回"PyTorch已安装"。
-            # 但为了保持功能，我们保留导入，但在 check_python_package 中我们已经优化了存在性检查。
-            # 此函数仅在 run_full_check 的最后阶段调用。
+            # Note: importing torch may still be slow; this function is called only at the end of run_full_check.
             
             import torch
             
-            # 检查PyTorch版本
+            # Check PyTorch version
             torch_version = torch.__version__
             
             if torch.cuda.is_available():
                 gpu_count = torch.cuda.device_count()
                 gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "Unknown"
                 cuda_version = torch.version.cuda
-                return f"GPU支持可用 - PyTorch {torch_version} (CUDA {cuda_version}), 设备数量: {gpu_count}, 主设备: {gpu_name}"
+                return f"GPU support available - PyTorch {torch_version} (CUDA {cuda_version}), device count: {gpu_count}, primary device: {gpu_name}"
             else:
-                # 检查是否是CPU版本
+                # Check whether this is a CPU-only build
                 if '+cpu' in torch_version:
-                    return f"PyTorch {torch_version} (CPU版本) - 如需GPU加速，请安装GPU版本"
+                    return f"PyTorch {torch_version} (CPU-only build) - install a CUDA build for GPU acceleration"
                 else:
-                    return f"PyTorch {torch_version} - GPU支持不可用，将使用CPU进行计算"
+                    return f"PyTorch {torch_version} - GPU support not available; computations will run on CPU"
         except ImportError:
-            return "PyTorch未安装，无法检查GPU支持"
+            return "PyTorch is not installed; GPU support cannot be evaluated"
 
     def check_biopython_features(self):
         try:
@@ -174,48 +212,50 @@ class DependencyChecker:
             ver = getattr(Bio, "__version__", "unknown")
             _ = Seq("ATG").translate(table=1)
             _ = Seq("ATG").reverse_complement()
-            return True, f"Biopython 版本: {ver}，Seq.translate/reverse_complement 可用"
+            return True, f"Biopython version: {ver}; Seq.translate/reverse_complement are available"
         except Exception as e:
-            return False, f"Biopython功能检查失败: {e}"
+            return False, f"Biopython feature check failed: {e}"
     
     def check_prediction_dependencies(self):
 
-        # 检查PyTorch
+        # Check PyTorch
         if not self.check_python_package('torch'):
-            return False, "预测功能需要PyTorch，但PyTorch未安装"
+            return False, "Prediction requires PyTorch, but PyTorch is not installed"
         
-        # 检查预测模型文件
+        # Check prediction model file
         model_file = self.required_files.get('model.pth')
         if not self.check_file_exists(model_file):
-            return False, f"预测功能需要模型文件，但文件不存在: {model_file}"
+            return False, f"Prediction requires a model file, but it does not exist: {model_file}"
         
         predict_script = self.required_files.get('predict.py')
         if not self.check_file_exists(predict_script):
-            return False, f"预测功能需要预测脚本，但文件不存在: {predict_script}"
+            return False, f"Prediction requires a prediction script, but it does not exist: {predict_script}"
         
-        return True, "预测功能依赖检查通过"
+        return True, "Prediction dependencies satisfied"
     
     def ensure_db_extracted(self):
         """
-        确保db文件夹已解压。如果db文件夹不存在，尝试从压缩包解压或从GitHub下载。
-        使用 module/db_manager.py 实现。
+        Ensure that the db directory is available.
+
+        If the db directory is missing, attempt to extract it from an archive or download it.
+        When an external InterProScan is provided, db/interproscan is not strictly required, but
+        other assets (e.g., HMM files) may still be needed.
+
+        Implemented via module/db_manager.py.
         
         Returns:
-            bool: 如果db文件夹可用返回True，否则返回False
+            bool: True if the db directory is usable; otherwise False.
         """
         try:
-            # 动态导入 db_manager 模块
-            # 注意：DependencyChecker 可能在 module 目录中，也可能在上一级，
-            # 但 db_manager.py 位于 module/ 目录中。
-            # 如果 DependencyChecker 位于 module/check_dependencies.py，则 module/db_manager.py 位于同一目录
+            # Dynamically import db_manager (located in the same module directory)
             
-            # 获取 db_manager.py 的路径
+            # Resolve db_manager.py path
             current_dir = Path(__file__).parent.absolute()
             db_manager_path = current_dir / "db_manager.py"
             
             if not db_manager_path.exists():
-                print(f"  [错误] db_manager模块不存在: {db_manager_path}")
-                # 回退到旧逻辑 (仅检查存在性)
+                print(f"  [ERROR] db_manager module not found: {db_manager_path}")
+                # Fallback: only check existence
                 if self.db_dir.exists() and self.db_dir.is_dir():
                     return True
                 return False
@@ -225,192 +265,215 @@ class DependencyChecker:
             db_manager = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(db_manager)
             
-            # 使用项目根目录调用 setup_db
+            # Call setup_db using the project root directory
             return db_manager.setup_db(self.script_dir)
                 
         except Exception as e:
-            print(f"  [错误] 检查/准备db文件夹时出错: {e}")
+            print(f"  [ERROR] Error while checking/preparing db directory: {e}")
             return False
 
-    def run_full_check(self, check_predict=False):
+    def run_full_check(self, check_predict=False, skip_db_check=False, test_mode=False):
         """
-        运行完整的依赖检查
+        Run the full dependency check.
         
         Args:
-            check_predict (bool): 是否检查预测功能相关的依赖（如PyTorch）
+            check_predict (bool): Whether to check prediction dependencies (e.g., PyTorch).
+            skip_db_check (bool): Whether to skip db directory preparation/checks.
+            test_mode (bool): Whether running in test mode (skip InterProScan/hmmscan checks).
         """
-        print("开始检查iTAK 2.0依赖...")
+        print("Starting iTAK 2.0 dependency checks...")
         print("=" * 60)
         
         all_dependencies_met = True
         
-        # 首先确保db文件夹已解压
-        print("\n检查数据库文件:")
-        if self.ensure_db_extracted():
-            print("  [成功] 数据库文件准备完成")
+        # Ensure db directory is ready (unless skipped)
+        # If the user provides --interproscan, the local db directory is not required.
+        if test_mode:
+            print("\nDatabase files:")
+            print("  [SKIP] Test mode (-test) does not require the db directory")
+        elif skip_db_check:
+            print("\nDatabase files:")
+            print("  [SKIP] db checks are disabled")
+        elif self.interproscan_path:
+            print("\nDatabase files:")
+            print("  [SKIP] --interproscan specified; skipping db directory preparation checks")
         else:
-            print("  [错误] 数据库文件准备失败")
-            self.missing_dependencies.append("数据库文件")
-            all_dependencies_met = False
-        
-        # 检查必需的Python包
-        print("\n检查必需Python包依赖:")
-        for package, description in self.required_python_packages.items():
-            if self.check_python_package(package):
-                print(f"  [成功] {package:<15} - {description}")
+            print("\nDatabase files:")
+            if self.ensure_db_extracted():
+                print("  [OK] Database assets are ready")
             else:
-                print(f"  [错误] {package:<15} - {description}")
-                self.missing_dependencies.append(f"Python包: {package}")
+                print("  [ERROR] Database asset preparation failed")
+                self.missing_dependencies.append("Database files")
                 all_dependencies_met = False
         
-        # 检查可选的Python包（仅当启用预测检查时检查PyTorch）
-        print("\n检查可选Python包依赖:")
+        # Check required Python packages
+        print("\nRequired Python packages:")
+        for package, description in self.required_python_packages.items():
+            if self.check_python_package(package):
+                print(f"  [OK] {package:<15} - {description}")
+            else:
+                print(f"  [ERROR] {package:<15} - {description}")
+                self.missing_dependencies.append(f"Python package: {package}")
+                all_dependencies_met = False
+        
+        # Check optional Python packages (torch only when prediction is requested)
+        print("\nOptional Python packages:")
         for package, description in self.optional_python_packages.items():
-            # 如果不是检查预测模式，且包是torch，则跳过
+            # If prediction checks are disabled, skip torch
             if package == 'torch' and not check_predict:
                 continue
                 
             if package == 'torch':
-                print("  [信息] 正在检查PyTorch（可能需要几秒钟）...")
+                print("  [INFO] Checking PyTorch (this may take a few seconds)...")
             
             if self.check_python_package(package):
-                print(f"  [成功] {package:<15} - {description}")
+                print(f"  [OK] {package:<15} - {description}")
             else:
-                # 只有在明确要求检查预测功能时，缺少torch才算是错误或警告
+                # Missing torch is only relevant when prediction is requested
                 if check_predict and package == 'torch':
-                    print(f"  [警告] {package:<15} - {description}")
-                    self.missing_optional_dependencies.append(f"Python包: {package}")
-                    print(f"      注意: 缺少{package}导致预测功能不可用")
+                    print(f"  [WARN] {package:<15} - {description}")
+                    self.missing_optional_dependencies.append(f"Python package: {package}")
+                    print(f"      Note: missing {package} disables prediction")
                 else:
-                    print(f"  [警告] {package:<15} - {description}")
-                    print(f"      注意: 缺少{package}不会影响基本功能")
+                    print(f"  [WARN] {package:<15} - {description}")
+                    print(f"      Note: missing {package} does not affect core functionality")
 
-        # 额外检查：Biopython关键功能
-        print("\n检查Biopython关键功能:")
+        # Additional check: Biopython core features
+        print("\nBiopython feature checks:")
         ok, msg = self.check_biopython_features()
         if ok:
-            print(f"  [成功] {msg}")
+            print(f"  [OK] {msg}")
         else:
-            print(f"  [错误] {msg}")
-            self.missing_dependencies.append("Biopython关键功能")
+            print(f"  [ERROR] {msg}")
+            self.missing_dependencies.append("Biopython core features")
             all_dependencies_met = False
         
-        # 检查外部工具
-        print("\n检查外部工具:")
+        # Check external tools
+        print("\nExternal tools:")
         
-        # 检查hmmscan
-        hmm_ok, hmm_msg = self.check_hmmscan()
-        if hmm_ok:
-            print(f"  [成功] hmmscan         - {hmm_msg}")
-        else:
-            print(f"  [错误] hmmscan         - {hmm_msg}")
-            self.missing_dependencies.append("外部工具: hmmscan")
-            all_dependencies_met = False
-            
-        for tool, description in self.required_external_tools.items():
-            if self.check_external_tool(tool):
-                print(f"  [成功] {tool:<15} - {description}")
+        if not test_mode:
+            hmm_ok, hmm_msg = self.check_hmmscan()
+            if hmm_ok:
+                print(f"  [OK] hmmscan         - {hmm_msg}")
             else:
-                print(f"  [错误] {tool:<15} - {description}")
-                self.missing_dependencies.append(f"外部工具: {tool}")
+                print(f"  [ERROR] hmmscan         - {hmm_msg}")
+                self.missing_dependencies.append("External tool: hmmscan")
+                all_dependencies_met = False
+            
+        tools_to_check = self.required_external_tools.items()
+        if test_mode:
+            tools_to_check = [('python3', self.required_external_tools['python3'])]
+
+        for tool, description in tools_to_check:
+            if self.check_external_tool(tool):
+                print(f"  [OK] {tool:<15} - {description}")
+            else:
+                print(f"  [ERROR] {tool:<15} - {description}")
+                self.missing_dependencies.append(f"External tool: {tool}")
                 all_dependencies_met = False
         
-        # 检查关键文件
-        print("\n检查关键文件:")
+        # Check required files
+        print("\nKey files:")
         for file_name, file_path in self.required_files.items():
-            # 如果不检查预测功能，跳过预测相关文件
+            # If prediction is not requested, skip prediction-related files
             if not check_predict and file_name in ['predict.py', 'model.pth']:
+                continue
+            if test_mode and file_name in ['interproscan.sh', 'self_build.hmm']:
                 continue
                 
             if self.check_file_exists(file_path):
-                print(f"  [成功] {file_name:<20} - {file_path}")
+                print(f"  [OK] {file_name:<20} - {file_path}")
             else:
-                print(f"  [错误] {file_name:<20} - {file_path}")
-                self.missing_dependencies.append(f"文件: {file_path}")
+                print(f"  [ERROR] {file_name:<20} - {file_path}")
+                self.missing_dependencies.append(f"File: {file_path}")
                 all_dependencies_met = False
         
-        # 检查InterProScan配置
-        print("\n检查InterProScan配置:")
-        if self.check_interproscan_setup():
-            print("  [成功] InterProScan配置正常")
+        # Check InterProScan configuration
+        if test_mode:
+            print("\nInterProScan configuration:")
+            print("  [SKIP] Test mode (-test) does not require InterProScan")
         else:
-            print("  [错误] InterProScan配置有问题")
-            self.missing_dependencies.append("InterProScan配置")
-            all_dependencies_met = False
+            print("\nInterProScan configuration:")
+            if self.check_interproscan_setup():
+                print("  [OK] InterProScan configuration is valid")
+            else:
+                print("  [ERROR] InterProScan configuration is invalid")
+                self.missing_dependencies.append("InterProScan configuration")
+                all_dependencies_met = False
         
-        # 检查PyTorch GPU支持（仅在PyTorch可用且启用预测检查时）
+        # Check PyTorch GPU support (only when prediction checks are enabled)
         if check_predict:
-            print("\n检查GPU支持（预测功能相关）:")
+            print("\nGPU support (prediction-related):")
             if self.check_python_package('torch'):
                 gpu_status = self.check_pytorch_gpu_support()
-                print(f"  [信息] {gpu_status}")
+                print(f"  [INFO] {gpu_status}")
             else:
-                print("  [警告] PyTorch未安装，无法检查GPU支持状态")
+                print("  [WARN] PyTorch is not installed; GPU status cannot be evaluated")
         
-        # 显示警告信息
+        # Emit warnings
         if self.warnings:
-            print("\n[警告] 警告信息:")
+            print("\n[WARN] Warnings:")
             for warning in self.warnings:
-                print(f"  [警告] {warning}")
+                print(f"  [WARN] {warning}")
         
-        # 总结
+        # Summary
         print("\n" + "=" * 60)
         if all_dependencies_met:
-            print("[成功] 所有必需依赖检查通过！iTAK 2.0可以正常运行。")
+            print("[OK] All required dependencies are satisfied. iTAK 2.0 is ready to run.")
             if self.missing_optional_dependencies:
-                print("[警告] 注意：以下可选依赖缺失，某些功能可能不可用:")
+                print("[WARN] The following optional dependencies are missing; some features may be unavailable:")
                 for dep in self.missing_optional_dependencies:
                     print(f"  - {dep}")
                 if check_predict:
-                    print("  如需使用预测功能，请安装PyTorch。")
+                    print("  Install PyTorch to enable prediction.")
         else:
-            print("[错误] 发现缺失的必需依赖！请安装以下组件:")
+            print("[ERROR] Missing required dependencies. Please install the following components:")
             for dep in self.missing_dependencies:
                 print(f"  - {dep}")
-            print("\n安装建议:")
+            print("\nInstallation suggestions:")
             self._print_installation_suggestions()
         
         return all_dependencies_met
     
     def _print_installation_suggestions(self):
-        """打印安装建议"""
-        print("\n安装建议:")
+        """Print installation suggestions."""
+        print("\nInstallation suggestions:")
         
-        # Python包安装建议
-        python_packages_missing = [dep.split(': ')[1] for dep in self.missing_dependencies if dep.startswith('Python包')]
+        # Python package suggestions
+        python_packages_missing = [dep.split(': ')[1] for dep in self.missing_dependencies if dep.startswith('Python package: ')]
         if python_packages_missing:
-            print("\n  Python包安装:")
+            print("\n  Python packages:")
             for pkg in python_packages_missing:
                 if pkg == 'torch':
-                    print("    PyTorch安装 (选择适合您系统的版本):")
-                    print("      CPU版本: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu")
-                    print("      GPU版本 (CUDA): pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
-                    print("      更多版本请访问: https://pytorch.org/get-started/locally/")
+                    print("    PyTorch (choose a build appropriate for your system):")
+                    print("      CPU: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu")
+                    print("      GPU (CUDA): pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
+                    print("      More options: https://pytorch.org/get-started/locally/")
                 elif pkg == 'Bio':
                     print(f"    pip install biopython")
                 elif pkg in ['pandas', 'numpy']:
                     print(f"    pip install {pkg}")
         
-        # 外部工具安装建议
-        external_tools_missing = [dep.split(': ')[1] for dep in self.missing_dependencies if dep.startswith('外部工具')]
+        # External tool suggestions
+        external_tools_missing = [dep.split(': ')[1] for dep in self.missing_dependencies if dep.startswith('External tool: ')]
         if external_tools_missing:
-            print("\n  外部工具安装:")
+            print("\n  External tools:")
             for tool in external_tools_missing:
                 if tool == 'hmmscan':
-                    print("    安装HMMER: http://hmmer.org/download.html")
+                    print("    Install HMMER: http://hmmer.org/download.html")
                     print("    Ubuntu/Debian: sudo apt-get install hmmer")
                     print("    CentOS/RHEL: sudo yum install hmmer")
                 elif tool == 'java':
-                    print("    安装Java: https://www.oracle.com/java/technologies/downloads/")
+                    print("    Install Java: https://www.oracle.com/java/technologies/downloads/")
                     print("    Ubuntu/Debian: sudo apt-get install openjdk-11-jdk")
                     print("    CentOS/RHEL: sudo yum install java-11-openjdk")
                 elif tool == 'perl':
-                    print("    安装Perl: https://www.perl.org/get.html")
+                    print("    Install Perl: https://www.perl.org/get.html")
                     print("    Ubuntu/Debian: sudo apt-get install perl")
                     print("    CentOS/RHEL: sudo yum install perl")
 
 def main():
-    """主函数"""
+    """Entry point."""
     checker = DependencyChecker()
     success = checker.run_full_check()
     

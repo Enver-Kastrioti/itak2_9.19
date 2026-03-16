@@ -1,0 +1,86 @@
+train.py user guide (supplementary_model training script)
+The Lecrk_dataset.fasta / Lecrk_dataset.json / Lecrk_dataset.pth files in this directory are provided as examples only.
+
+1) Purpose
+- This supplementary-model training script is intended to extend iTAK2 by allowing users to train additional models on a custom dataset, thereby expanding the preclassification capability.
+- The architecture matches OneHotLightweightCNN used in the main prediction script (multi-branch 1D-CNN + attention + pooling + fully connected classifier).
+- Input is a JSON dataset (sequence + label). The script splits the dataset into train/validation/test sets with an 8:1:1 ratio.
+- The validation set is used for model selection (the best .pth is saved by validation accuracy). The test set is evaluated once at the end using the best checkpoint.
+- During training, the best checkpoint is selected by validation accuracy (Val Acc) and saved as a .pth file.
+
+2) How to run
+Run from the itak21.14 directory:
+- Specify the dataset and training parameters via CLI
+python pre_model/supplementary_model/train.py \
+  --dataset-json pre_model/supplementary_model/dataset.json \
+  --model-name pre_model/supplementary_model/model.pth \
+  --batch-size 32 \
+  --learning-rate 0.001 \
+  --epochs 20 \
+  --max-length 1000 \
+  --seed 42
+
+3) Arguments
+--dataset-json
+  - Path to the dataset JSON file
+  - Required
+
+--model-name
+  - Output checkpoint filename or path
+  - If no extension is provided, .pth is appended automatically
+  - If a relative path is provided, the model is saved under pre_model/supplementary_model/
+  - Required
+
+--batch-size
+  - Training batch size
+  - Default: 32
+
+--learning-rate
+  - Adam learning rate
+  - Default: 0.001
+
+--epochs
+  - Number of training epochs
+  - Default: 20
+
+--max-length
+  - Sequence truncation/padding length
+  - Default: 1000
+
+--seed
+  - Random seed (random / numpy / torch) for reproducibility
+  - Default: 42
+
+--great-weight
+  - When tag=GREAT, multiply the sample loss by this weight (high-weight positive)
+  - Default: 3.0
+
+4) Dataset format (JSON)
+--dataset-json must be a JSON array (list). Each element is an object (dict) that contains at least:
+- sequence: protein sequence string (standard amino acids are recommended; unknown characters are mapped to X)
+- tag: label string. YES indicates TF (positive class, label=1), NO indicates Non-TF (negative class, label=0), GREAT indicates a high-weight positive (label=1 with loss weighting)
+
+Example:
+[
+  {"sequence": "MSTNPKPQRK...", "tag": "YES"},
+  {"sequence": "MAAA....", "tag": "NO"}
+]
+
+Notes:
+- tag is case-insensitive, but must be one of YES/NO/GREAT; otherwise the script raises an error.
+- Samples missing sequence or tag are skipped.
+- The script shuffles the dataset before splitting into 80%/10%/10% for train/validation/test.
+
+5) Outputs and logs
+The training loop prints:
+- Training on N samples, Validating on M samples, Testing on K samples.
+- Train Loss / Train Acc / Val Acc per epoch
+
+When Val Acc improves, the model is saved:
+- Model saved to <path>
+
+6) Device and dependencies
+- Uses PyTorch. CUDA is used automatically when a GPU is available; otherwise CPU is used.
+- The script sets MKL environment variables to mitigate MKL conflicts in some environments:
+  MKL_SERVICE_FORCE_INTEL=1
+  MKL_THREADING_LAYER=GNU

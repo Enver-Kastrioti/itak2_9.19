@@ -34,7 +34,7 @@ def check_db_integrity(db_path):
         return False
         
     # Check for essential subdirectories
-    required_subdirs = ["interproscan", "self_build_hmm"]
+    required_subdirs = ["interproscan"]
     for subdir in required_subdirs:
         if not (db_path / subdir).exists():
             print(f"Missing required subdirectory: {subdir}")

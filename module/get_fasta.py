@@ -5,23 +5,23 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 
 def get_output_dir(base_dir=None):
-    """获取输出目录路径
+    """Get the output directory path.
     
     Args:
-        base_dir (str, optional): 基础目录路径，如果不指定则使用项目根目录
+        base_dir (str, optional): Base directory; if None, use the project root.
     
     Returns:
-        str: result目录的完整路径
+        str: Absolute path to the result directory.
     """
     if base_dir is None:
-        # 获取当前脚本所在目录的父目录（项目根目录）
+        # Use the parent directory of this module as the project root
         current_dir = os.path.dirname(os.path.abspath(__file__))
         base_dir = os.path.dirname(current_dir)
     
-    # 创建result目录路径
+    # Build result directory path
     output_dir = os.path.join(base_dir, "result")
     
-    # 如果目录不存在，创建它
+    # Create it if missing
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
@@ -58,88 +58,88 @@ def get_project_output_dir(fasta_file):
 
 def read_fasta_to_dict(fasta_file):
     """
-    读取FASTA文件并转换为字典格式
+    Read a FASTA file and convert it to a dictionary.
     
     Args:
-        fasta_file (str): FASTA文件路径
+        fasta_file (str): Path to a FASTA file.
     
     Returns:
-        dict: 基因ID到序列的映射字典
+        dict: Mapping from record ID to sequence string.
     """
     fasta_dict = {}
     
     try:
         with open(fasta_file, 'r') as handle:
             for record in SeqIO.parse(handle, "fasta"):
-                # 使用record.id作为键，序列作为值
+                # Use record.id as the key and the sequence as the value
                 fasta_dict[record.id] = str(record.seq)
         
-        print(f"成功读取 {len(fasta_dict)} 个序列")
+        print(f"Successfully read {len(fasta_dict)} sequences")
         return fasta_dict
         
     except Exception as e:
-        print(f"读取FASTA文件时出错: {e}")
+        print(f"Error reading FASTA file: {e}")
         return {}
 
 def format_tf_fasta_with_classification(fasta_file, classification_result, output_file):
     """
-    根据分类结果生成包含TF分类信息的标准格式FASTA文件
+    Generate a standardized FASTA file with TF classification annotations.
     
     Args:
-        fasta_file (str): 输入的FASTA文件路径
-        classification_result (dict): 分类结果字典，格式为 {gene_id: {name, family, type, desc, other_family}}
-        output_file (str): 输出FASTA文件路径
+        fasta_file (str): Input FASTA file path.
+        classification_result (dict): Classification results, keyed by gene_id.
+        output_file (str): Output FASTA file path.
     
     Returns:
-        bool: 是否成功生成文件
+        bool: True on success, otherwise False.
     """
     try:
         fasta_dict = read_fasta_to_dict(fasta_file)
         if not fasta_dict:
-            print("无法读取分类输入FASTA文件")
+            print("Unable to read the input FASTA file for classification")
             return False
         
-        # 生成格式化的FASTA文件，只包含有分类结果的序列
+        # Write only sequences that have classification results
         with open(output_file, 'w') as f:
             written_count = 0
             for gene_id, sequence in fasta_dict.items():
-                # 只处理在分类字典中的基因
+                # Only include entries present in the classification map
                 if gene_id in classification_result:
                     tf_info = classification_result[gene_id]
                     
-                    # 构建FASTA头部信息
-                    # 格式: >gene_id | family | type
+                    # FASTA header format: >gene_id | family | type
                     header = f">{gene_id} | {tf_info['family']} | {tf_info['type']}"
                     
-                    # 写入头部和序列
+                    # Write header and sequence
                     f.write(header + '\n')
                     f.write(sequence + '\n')
                     written_count += 1
             
-            print(f"成功生成包含 {written_count} 个分类序列的FASTA文件")
-            print(f"所有序列都包含TF分类信息")
+            print(f"Successfully generated a FASTA file containing {written_count} classified sequences")
+            print("All output sequences include TF classification annotations")
             return True
             
     except Exception as e:
-        print(f"生成FASTA文件时出错: {e}")
+        print(f"Error generating FASTA file: {e}")
         return False
 
 def generate_classified_fasta(fasta_file, classification_result, output_file=None, output_dir=None):
     """
-    供其他模块调用的函数，生成包含TF分类信息的FASTA文件
-    只包含有分类结果的序列
+    Generate a FASTA file with TF classification annotations (for use by other modules).
+
+    Only sequences with classification results are included.
     
     Args:
-        fasta_file (str): 输入的FASTA文件路径
-        classification_result (dict): 从内存中获取的分类结果字典
-        output_file (str, optional): 输出文件路径，如果不指定则自动生成
-        output_dir (str, optional): 输出目录路径，主脚本可以指定项目子文件夹
+        fasta_file (str): Input FASTA file path.
+        classification_result (dict): In-memory classification results.
+        output_file (str, optional): Output FASTA file path. If None, a default is generated.
+        output_dir (str, optional): Output directory path (e.g., project subdirectory).
     
     Returns:
-        str: 输出文件路径，如果失败返回None
+        str: Output file path; returns None on failure.
     """
     try:
-        # 如果没有指定输出文件，自动生成路径
+        # If output_file is not provided, generate a default path
         if not output_file:
             input_name = os.path.splitext(os.path.basename(fasta_file))[0]
             if output_dir:
@@ -148,7 +148,7 @@ def generate_classified_fasta(fasta_file, classification_result, output_file=Non
                 result_dir = get_output_dir(output_dir)
             output_file = os.path.join(result_dir, f"{input_name}_tf_classified.fasta")
         
-        # 调用格式化函数
+        # Run formatter
         success = format_tf_fasta_with_classification(fasta_file, classification_result, output_file)
         
         if success:
@@ -157,7 +157,7 @@ def generate_classified_fasta(fasta_file, classification_result, output_file=Non
             return None
             
     except Exception as e:
-        print(f"生成分类FASTA文件时出错: {e}")
+        print(f"Error generating classified FASTA file: {e}")
         return None
 
 def _looks_like_cds(seq):
@@ -166,7 +166,7 @@ def _looks_like_cds(seq):
     if not letters:
         return False
     nuc = set("ACGTUNWSMKRYBDHV")
-    # 严格判定：全部字符均为核苷酸（移除长度为3的倍数的限制，防止部分CDS被漏掉）
+    # Strict criterion: all letters must be nucleotides (do not require length % 3 == 0)
     if not set(letters).issubset(nuc):
         return False
     return True
@@ -215,7 +215,7 @@ def generate_protein_sequences_in_memory(fasta_file, genetic_code=1, min_orf_aa=
                     sequences.append({"header": record.id, "sequence": seq})
         return sequences
     except Exception as e:
-        print(f"6转翻译生成内存序列失败: {e}")
+        print(f"Failed to generate in-memory sequences via six-frame translation: {e}")
         return []
 
 def format_tf_fasta_with_classification_from_mem(seqs_dict, classification_result, output_file):
@@ -229,20 +229,17 @@ def format_tf_fasta_with_classification_from_mem(seqs_dict, classification_resul
                     f.write(header + '\n')
                     f.write(sequence + '\n')
                     written_count += 1
-        print(f"成功生成包含 {written_count} 个分类序列的FASTA文件")
-        print(f"所有序列都包含TF分类信息")
+        print(f"Successfully generated a FASTA file containing {written_count} classified sequences")
+        print("All output sequences include TF classification annotations")
         return True
     except Exception as e:
-        print(f"生成FASTA文件(内存)时出错: {e}")
+        print(f"Error generating FASTA file (in-memory): {e}")
         return False
 def get_processed_fasta_path(fasta_file, output_dir=None):
     input_name = os.path.splitext(os.path.basename(fasta_file))[0]
     project_dir = get_project_output_dir(fasta_file) if output_dir is None else output_dir
-    # processed_dir = os.path.join(project_dir, "six_frame_translation")
-    # if not os.path.exists(processed_dir):
-    #     os.makedirs(processed_dir)
-    # return os.path.join(processed_dir, f"{input_name}_protein_replaced.fasta")
-    # 修改为直接在output目录下生成，不再创建six_frame_translation子目录
+    # Previously: write into a "six_frame_translation" subdirectory.
+    # Now: write directly under the project output directory.
     return os.path.join(project_dir, f"{input_name}_protein_replaced.fasta")
 
 def generate_protein_fasta_with_translation(fasta_file, output_file=None, output_dir=None, genetic_code=1, min_orf_aa=30):
@@ -254,8 +251,7 @@ def generate_protein_fasta_with_translation(fasta_file, output_file=None, output
         translated_frames = 0
         has_translation = False
         
-        # 先读取一次判断是否需要翻译，如果全是蛋白则无需创建子文件夹（虽然路径已经修改为根目录）
-        # 但这里我们主要目的是为了逻辑统一：如果都是蛋白，直接复制或输出
+        # Determine whether translation is needed. If all inputs are proteins, translation is skipped.
         
         with open(fasta_file, 'r') as handle, open(output_file, 'w') as out:
             for record in SeqIO.parse(handle, "fasta"):
@@ -278,22 +274,22 @@ def generate_protein_fasta_with_translation(fasta_file, output_file=None, output
                     out.write(seq + "\n")
                     kept += 1
         
-        print(f"共读取 {total} 条序列，其中保留蛋白 {kept} 条，6转翻译生成帧序列 {translated_frames} 条")
-        print(f"已输出到: {output_file}")
+        print(f"Read {total} sequences; retained {kept} protein sequences; generated {translated_frames} translated-frame sequences via six-frame translation")
+        print(f"Written to: {output_file}")
         
         return output_file
     except Exception as e:
-        print(f"6转翻译输出蛋白FASTA失败: {e}")
+        print(f"Failed to write protein FASTA from six-frame translation: {e}")
         return None
 
 def main():
-    parser = argparse.ArgumentParser(description='生成包含TF分类信息的FASTA文件或进行6转翻译')
-    parser.add_argument('-i', '--input', required=True, help='输入FASTA文件路径')
-    parser.add_argument('-o', '--output', help='输出FASTA文件路径（可选）')
-    parser.add_argument('--classification', help='分类结果JSON文件路径（用于测试）')
-    parser.add_argument('--translate-only', action='store_true', help='仅执行6转翻译并输出蛋白FASTA')
-    parser.add_argument('--genetic-code', type=int, default=1, help='翻译使用的遗传密码表编号')
-    parser.add_argument('--min-orf-aa', type=int, default=30, help='最小ORF氨基酸长度阈值')
+    parser = argparse.ArgumentParser(description='Generate a FASTA file with TF annotations or perform six-frame translation')
+    parser.add_argument('-i', '--input', required=True, help='Path to input FASTA file')
+    parser.add_argument('-o', '--output', help='Path to output FASTA file (optional)')
+    parser.add_argument('--classification', help='Path to classification-result JSON file (for testing)')
+    parser.add_argument('--translate-only', action='store_true', help='Run six-frame translation only and write protein FASTA output')
+    parser.add_argument('--genetic-code', type=int, default=1, help='Genetic code table ID used for translation')
+    parser.add_argument('--min-orf-aa', type=int, default=30, help='Minimum ORF length threshold (amino acids)')
     
     args = parser.parse_args()
     
@@ -314,26 +310,26 @@ def main():
             min_orf_aa=args.min_orf_aa,
         )
         if out:
-            print(f"蛋白FASTA已保存到: {out}")
+            print(f"Protein FASTA saved to: {out}")
         else:
-            print("6转翻译失败")
+            print("Six-frame translation failed")
     else:
         if args.classification:
             try:
                 with open(args.classification, 'r', encoding='utf-8') as f:
                     classification_result = json.load(f)
-                print(f"从文件加载了 {len(classification_result)} 个分类结果")
+                print(f"Loaded {len(classification_result)} classification results from file")
             except Exception as e:
-                print(f"读取分类结果文件时出错: {e}")
+                print(f"Error reading classification-result file: {e}")
                 classification_result = {}
         else:
             classification_result = {}
-            print("未提供分类结果，将生成不包含TF分类信息的FASTA文件")
+            print("No classification results provided; generating a FASTA file without TF annotations")
         success = format_tf_fasta_with_classification(args.input, classification_result, args.output)
         if success:
-            print(f"FASTA文件已保存到: {args.output}")
+            print(f"FASTA file saved to: {args.output}")
         else:
-            print("FASTA文件生成失败")
+            print("FASTA generation failed")
 
 if __name__ == "__main__":
     main()

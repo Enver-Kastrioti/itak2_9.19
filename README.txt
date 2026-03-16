@@ -1,77 +1,82 @@
 ================================================================================
-                              iTAK2 - 转录因子预测和分析工具
+                      iTAK2 - Transcription Factor Prediction and Analysis
 ================================================================================
 
-项目简介
+Overview
 --------
-iTAK2 是一个用于转录因子预测和分析的生物信息学工具。该工具结合了深度学习模型预测
-和传统的序列分析方法，能够准确识别和分类蛋白质序列中的转录因子。
+iTAK2 is a bioinformatics tool for transcription factor (TF) prediction and analysis. It integrates
+deep-learning-based preclassification with conventional sequence/domain analyses to identify and
+classify TFs from protein sequences.
 
-主要功能
+Key Features
 --------
-1. 转录因子预测：使用深度学习模型预测蛋白质序列是否为潜在TF/TR序列
-2. 序列分析：通过InterProScan和hmmscan进行结构域分析
-3. 转录因子分类：基于规则引擎对转录因子进行家族分类
-4. 结果输出：生成详细的分析报告和分类序列文件
+1. TF prediction: use a deep learning model to predict whether protein sequences are potential TF/TR sequences
+2. Domain analysis: run InterProScan and hmmscan for domain annotation
+3. TF family classification: assign TF families based on rule-based logic
+4. Output reporting: generate detailed reports and classified sequence FASTA files
 
-系统要求
+System Requirements
 --------
 - Python 3.7+
-- Java 8+ (InterProScan需要)
-- HMMER 3.0+ (hmmscan工具)
+- Java 8+ (required by InterProScan)
+- HMMER 3.0+ (hmmscan)
 
-依赖包
+Dependencies
 ------
-必需的Python包：
+Required Python packages:
 - Biopython (Bio)
 - pandas
 - numpy
-- 标准库：json, csv, argparse, subprocess, pathlib, os, sys, time, datetime, shutil
+- Standard library: json, csv, argparse, subprocess, pathlib, os, sys, time, datetime, shutil
 
-可选的Python包：
-- PyTorch (仅预测功能需要)
+Optional Python packages:
+- PyTorch (required only for prediction)
 
-外部工具：
-- hmmscan (HMMER包)
-- java (InterProScan需要)
+External tools:
+- hmmscan (HMMER)
+- java (required by InterProScan)
 
-项目结构
+Project Layout
 --------
 itak2/
-├── itak2.0.py              # 主程序脚本
-├── module/                 # 功能模块目录
-│   ├── check_dependencies.py    # 依赖检测模块
-│   ├── validate_fasta.py        # FASTA文件验证模块
-│   ├── classification.py        # 转录因子分类模块
-│   ├── get_fasta.py             # 序列提取模块
-│   ├── get_json.py              # InterProScan结果处理模块
-│   ├── get_rule.py              # 规则文件解析模块
-│   └── selfbuild_hmm.py         # hmmscan结果处理模块
-├── pre_model/              # 预测模型目录
-│   ├── model.pth               # 深度学习模型文件
-│   └── predict.py              # 预测脚本
-├── db/                     # 数据库目录
-│   ├── interproscan/           # InterProScan程序和数据库
-│   ├── self_build_hmm/         # 自建HMM数据库
-│   └── rule.txt               # 转录因子分类规则文件
-├── output/                 # 输出目录
-├── temp/                   # 临时文件目录
-└── test_protein.fasta      # 示例序列文件
+├── itak2-v1.0.py           # Main CLI entry point
+├── module/                 # Modules
+│   ├── check_dependencies.py    # Dependency checker
+│   ├── validate_fasta.py        # FASTA validation
+│   ├── classification.py        # TF family classification
+│   ├── get_fasta.py             # Sequence extraction / FASTA utilities
+│   ├── get_json.py              # InterProScan JSON processing
+│   ├── get_rule.py              # Rule file parsing
+│   └── selfbuild_hmm.py         # hmmscan result processing
+├── pre_model/              # Prediction model assets
+│   ├── model.pth               # Deep learning model file
+│   └── predict.py              # Prediction script
+│   └── supplementary_model/     # Supplementary models (optional)
+├── db/                     # Database assets
+│   ├── interproscan/           # InterProScan program and databases
+├── hmm/                    # Custom HMM database (used by hmmscan)
+│   └── self_build.hmm
+├── Grad-Cam/               # Standalone Grad-CAM script (optional)
+│   └── grad-Cam.py
+├── rule.txt                # TF family classification rules
+├── output/                 # Output directory
+├── temp/                   # Temporary files
+└── test_protein.fasta      # Example input FASTA
 
-安装说明
+Installation
 --------
-1. 确保Python 3.7+已安装
-2. 安装必需的Python包：
+1. Ensure Python 3.7+ is installed
+2. Install required Python packages:
    pip install biopython pandas numpy
 
-3. 安装可选的PyTorch（如需使用预测功能）：
-   # CPU版本
+3. Install PyTorch (optional; required for prediction):
+   # CPU
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
    
-   # GPU版本 (CUDA 11.8)
+   # GPU (CUDA 11.8)
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-4. 安装HMMER：
+4. Install HMMER:
    # Ubuntu/Debian
    sudo apt-get install hmmer
    
@@ -81,111 +86,133 @@ itak2/
    # macOS
    brew install hmmer
 
-5. 确保Java已安装（InterProScan需要）：
+5. Ensure Java is available (required by InterProScan):
    java -version
 
-使用方法
+6. Database preparation (db/):
+   - The program checks whether db/ is ready at runtime. If missing, it attempts to extract db.tar.gz or download and prepare the assets via module/db_manager.py.
+   - If you provide an external InterProScan via --interproscan (i.e., not the iTAK2-managed InterProScan), downloading the bundled db/ assets is not required.
+
+Usage
 --------
 
-基本语法：
-python itak2.0.py [选项] -i <输入文件>
+Syntax:
+python itak2-v1.0.py [options] -i <input_file>
 
-主要参数：
--i, --input          输入FASTA文件路径 (必需)
--o, --output         输出目录路径 (可选，不选将输出到output文件下的项目文件夹内)
--t, --threshold      预测阈值，范围0-1 (默认: 0.1)
---predict           启用预测功能
---debug             启用调试模式
---score             InterProScan结果的score阈值 (默认: 1.0)
+Primary arguments:
+-i, --input              Input FASTA file path (required except with --check-deps)
+-o, --output             Output directory path (optional; default: output/<input_basename>/)
+-t, --threshold          Prediction threshold in [0,1] (default: 0.1; affects prediction only)
+--score                  Score threshold for InterProScan filtering (default: 1.0)
+--classification-mode    Classification mode: specific (specificity-first) or score (score-first, default)
 
-功能选项：
---predict           使用深度学习模型进行转录因子预测
---extract-sequences 提取预测的TF序列 (仅在--predict时有效，无需选择，仅用作测试)
---test-mode         测试模式，使用指定文件进行分类验证
---appl              InterProScan应用程序列表 (默认: 全部)
+Feature options:
+- -test, --test-mode      Test mode: skip InterProScan/hmmscan and validate classification using existing result files
+- -json, --json-file      InterProScan JSON result file for test mode
+- -spechmm, --spechmm-file hmmscan result file (result.tbl) for test mode
+- --predict               Enable prediction: run model inference, then analyze predicted TF sequences
+- --list-predict          Predict once, then generate multiple outputs under different thresholds
+- --predict-mode          Prediction splitting mode: fast (default) or full
+- --use-supplementary     Enable supplementary models (optional)
+- --supplementary-only    Use supplementary models only; skip the main model
+- --supp-models           Optional: specify supplementary model files (multiple allowed); if omitted, use all models in the directory
+- --grad-cam-mode         Grad-CAM mode: none (default)/fast/all/positive (all/positive require --predict; --list-predict currently unsupported)
+- --appl                  InterProScan application list (comma-separated; defaults to common libraries)
+- --interproscan          Path to an external interproscan.sh (hmmscan will follow that InterProScan)
+- --debug                 Enable debug outputs (default: off)
 
-依赖检查：
---check-deps        仅检查依赖并退出
---skip-deps-check   跳过依赖检查 (不推荐)
+Dependency checks:
+--check-deps            Check dependencies and exit
+--skip-deps-check       Skip dependency checks (not recommended)
 
-使用示例
+Examples
 --------
 
-1. 基本分析（直接分析输入序列）：
-   python itak2.0.py -i test_protein.fasta
+1. Basic analysis (analyze input directly):
+   python itak2-v1.0.py -i test_protein.fasta
 
-2. 使用预测功能：
-   python itak2.0.py --predict -i test_protein.fasta -t 0.1
+2. Prediction workflow:
+   python itak2-v1.0.py --predict -i test_protein.fasta -t 0.1
 
-3. 指定输出目录：
-   python itak2.0.py --predict -i test_protein.fasta -o /path/to/output
+3. Specify an output directory:
+   python itak2-v1.0.py --predict -i test_protein.fasta -o /path/to/output
 
-4. 启用调试模式：
-   python itak2.0.py --predict -i test_protein.fasta --debug
+4. Enable debug mode:
+   python itak2-v1.0.py --predict -i test_protein.fasta --debug
 
-5. 自定义InterProScan数据库：
-   python itak2.0.py -i test_protein.fasta --appl CDD,Pfam,SMART
+5. Restrict InterProScan applications:
+   python itak2-v1.0.py -i test_protein.fasta --appl CDD,Pfam,SMART
 
-6. 测试模式：
-   python itak2.0.py --test-mode -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
+6. Test mode:
+   python itak2-v1.0.py -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
 
-7. 检查依赖：
-   python itak2.0.py --check-deps
+7. Check dependencies:
+   python itak2-v1.0.py --check-deps
 
-输出文件
+8. Multi-threshold batch outputs (predict once, classify multiple times):
+   python itak2-v1.0.py --list-predict -i test_protein.fasta -o /path/to/output
+
+9. Use supplementary models:
+   python itak2-v1.0.py --predict --use-supplementary -i test_protein.fasta
+
+10. Grad-CAM heatmaps (generate PNGs for classified TF sequences):
+   python itak2-v1.0.py --predict --grad-cam-mode fast -i test_protein.fasta
+
+Outputs
 --------
-程序会在输出目录中创建以下文件和目录：
+The program creates the following files and directories under the output directory:
 
-result/                     # 主要结果目录
-├── match_tbl.txt              # 转录因子分类结果表格
-├── match.json                 # 转录因子分类结果JSON (调试模式)
-├── *_tf_classified.fasta      # 分类后的转录因子序列
-├── processed_ipr_domains.json # 处理后的InterProScan结果 (调试模式)
-└── pfamspec.json             # hmmscan结果 (调试模式)
+<project_output>/                         # Project output directory (default: output/<input_basename>/)
+├── protein_model_preclassification/      # Prediction outputs (only with --predict/--list-predict)
+│   ├── <name>_prediction.csv             # Predictions for all sequences
+│   ├── <name>_prediction_tf_only.csv     # Subset with TF_Probability >= threshold
+│   └── <name>_tf_sequences.fasta         # Extracted TF sequences
+├── InterproScan/                         # InterProScan output directory
+│   └── <input>.json
+├── hmmscan/                              # hmmscan output directory
+│   └── result.tbl
+├── getrule.json                         # Debug output (--debug): parsed classification rules
+└── result/                               # Classification results
+    ├── match_tbl.txt                      # TF family assignment table
+    ├── <name>_tf_classified.fasta         # Classified TF sequences
+    ├── match.json                         # Debug output (--debug)
+    ├── processed_ipr_domains.json         # Debug output
+    └── pfamspec.json                      # Debug output (--debug)
 
-fasta/                      # 序列文件目录 (预测模式)
-├── *_tf_sequences.fasta       # 预测的转录因子序列
-└── prediction_results.csv     # 预测结果详细表格
+Grad-CAM outputs:
+- Written to <project_output>/<name>_gradcam/ by default, with one PNG per sequence (only when --grad-cam-mode is enabled)
 
-ipr/                        # InterProScan结果目录
-└── *.json                     # InterProScan原始结果
-
-hmmscan/                    # hmmscan结果目录
-└── result.tbl                 # hmmscan原始结果
-
-getrule.json               # 解析后的分类规则
-
-工作流程
+Workflow
 --------
-1. 输入验证：检查FASTA文件格式和蛋白质序列
-2. 依赖检查：验证所需工具和库是否可用
-3. 预测阶段（可选）：使用深度学习模型预测转录因子
-4. 序列分析：运行InterProScan和hmmscan进行结构域分析
-5. 结果处理：解析分析结果并过滤
-6. 转录因子分类：基于规则引擎进行家族分类
-7. 结果输出：生成分类报告和序列文件
+1. Input validation: validate FASTA structure and protein sequences
+2. Dependency checks: verify required tools and libraries
+3. Prediction stage (optional): run deep learning model inference for TF preclassification
+4. Domain analysis: run InterProScan and hmmscan
+5. Result processing: parse and filter analysis outputs
+6. TF family classification: apply rule-based family assignment
+7. Output reporting: write classification reports and FASTA files
 
-故障排除
+Troubleshooting
 --------
 
-常见问题：
+Common issues:
 
-1. "依赖检查失败"
-   - 检查Python包是否正确安装
-   - 确认外部工具在PATH中可用
-   - 使用 --check-deps 详细检查依赖状态
+1. "Dependency checks failed"
+   - Verify required Python packages are installed
+   - Confirm external tools are available on PATH
+   - Run --check-deps for detailed diagnostics
 
-2. "FASTA文件验证失败"
-   - 确认文件格式正确
-   - 检查是否为蛋白质序列
-   - 移除序列中的星号(*)字符
+2. "FASTA validation failed"
+   - Confirm the FASTA file format is valid
+   - Verify sequences are protein sequences
+   - Remove asterisks (*) from sequences
 
-3. "InterProScan运行失败"
-   - 确认Java已正确安装
-   - 检查InterProScan数据库完整性
-   - 确保有足够的磁盘空间
+3. "InterProScan failed"
+   - Verify Java is installed and accessible
+   - Check integrity of InterProScan databases
+   - Ensure sufficient disk space
 
-4. "预测功能不可用"
-   - 安装PyTorch: pip install torch
-   - 确认model.pth文件存在
-   - 检查predict.py脚本完整性
+4. "Prediction is unavailable"
+   - Install PyTorch: pip install torch
+   - Confirm model.pth exists
+   - Verify predict.py is present and intact

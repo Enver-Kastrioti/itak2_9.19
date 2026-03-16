@@ -89,59 +89,57 @@ def parse_required_logic(text):
 
 def parse_rule_file(file_path):
     rules_dict = {}
-    # 检查输入文件是否存在
+    # Validate input path
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"The input file '{file_path}' was not found.")
     
     with open(file_path, 'r', encoding='utf-8') as file:
-        # 将输入文件所有行合并为一个字符串，去除空白字符，按照//分割为多个块
+        # Concatenate lines and split into blocks using the '//' delimiter
         blocks = ''.join(file.readlines()).strip().split('//')
         
         for block in blocks:
-            # 遍历每个块，跳过空的块
+            # Skip empty blocks
             if not block.strip():
                 continue
-            # 将块分割成多行，去除掉以#开头的注释行
+            # Convert the block into non-empty, non-comment lines
             lines = list(_iter_clean_lines(block))
             if not lines:
                 continue
-            # 创建一个空字典
+            # Parse key/value pairs within the block
             rule = {}
             for line in lines:
-                # 使用第一个出现的':'将行分割成键和值两部分
+                # Split only at the first ':' to preserve values containing ':'
                 if ':' not in line:
                     continue
                 key, value = line.split(':', 1)
                 rule[key.strip()] = value.strip()
             
-            # 从字典中获取必要字段
+            # Required fields
             id_value = rule.get('ID', None)
             if not id_value:
-                # 非规则块或缺少ID，跳过
+                # Not a rule block or missing ID
                 continue
             
-            # 构建规则数据结构
+            # Build the normalized rule structure
             required_raw = rule.get('Required', '')
             
-            # 使用新的逻辑解析器
+            # Parse the Required expression into a logic tree
             logic_tree = parse_required_logic(required_raw)
             
-            # 为了兼容性，如果解析失败或结果简单，回退到旧模式?
-            # 其实我们可以统一使用 logic 模式，或者只在复杂时使用
-            # 但为了统一处理，建议全部视为 logic 模式
+            # For consistency, always use the logic-mode representation.
             
-            # 提取所有涉及的domain用于快速过滤（可选）
+            # Optional: extract all domains referenced in the Required expression for fast pre-filtering
             # flat_domains = [r for r in required_raw.replace(':', '#').replace('(', '').replace(')', '').split('#') if r]
             
             rule_data = {
-                'id': id_value, # 添加ID字段
+                'id': id_value, # Add the ID field
                 'name': rule.get('Name', 'NA'),
                 'family': rule.get('Family', 'NA'),
                 'type': rule.get('Type', 'NA'),
                 'desc': [] if rule.get('Desc', 'NA') == 'NA' else [rule.get('Desc')],
-                'mode': ['logic'], # 统一使用 logic 模式
+                'mode': ['logic'], # Use logic mode uniformly
                 'logic': logic_tree,
-                'required': [], # 不再使用扁平列表
+                'required': [], # Flat lists are no longer used
                 'forbidden': rule.get('Forbidden', '').split(':') if 'Forbidden' in rule else []
             }
             
@@ -152,11 +150,18 @@ def parse_rule_file(file_path):
 
 def parse_score_thresholds(file_path):
     """
-    解析规则文件中的全局特定条目分数阈值。
-    示例行：
+    Parse global accession-specific score thresholds defined in the rule file.
+
+    Example line:
       Score:PS50863(10):cd10017(15)
-    注意：该阈值是全局性的，与具体家族所属无关；若同一个条目在多个家族下重复出现，则取其中的最大阈值（更严格）。
-    返回：dict，例如 {"PS50863": 10.0, "cd10017": 15.0}
+
+    Notes:
+    - Thresholds are global and independent of family assignment.
+    - If an accession appears multiple times across blocks, the maximum threshold is retained
+      (i.e., the most stringent criterion).
+
+    Returns:
+      dict, e.g. {"PS50863": 10.0, "cd10017": 15.0}
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"The input file '{file_path}' was not found.")
@@ -167,69 +172,69 @@ def parse_score_thresholds(file_path):
         for block in blocks:
             if not block.strip() or block.strip().startswith('#'):
                 continue
-            # 逐行检查 Score 行
+            # Scan for 'Score:' lines
             for line in _iter_clean_lines(block):
                 if not line.startswith('Score:'):
                     continue
-                # 去掉前缀并按 ':' 分割每个条目
+                # Remove the prefix and split each entry by ':'
                 content = line[len('Score:'):].strip()
                 parts = [p for p in content.split(':') if p]
                 for part in parts:
                     part = part.strip()
-                    # 形如 PS50863(10) 或 cd10017(15)
+                    # Format: PS50863(10) or cd10017(15)
                     if '(' in part and part.endswith(')'):
                         try:
                             name, val_str = part.split('(', 1)
                             name = name.strip()
-                            val = float(val_str[:-1])  # 去除末尾 ')'
+                            val = float(val_str[:-1])  # Strip trailing ')'
                             if name:
-                                # 如果重复出现，采用最大阈值以更严格
+                                # If duplicated, keep the maximum threshold (more stringent)
                                 thresholds[name] = max(val, thresholds.get(name, float('-inf')))
                         except Exception:
-                            # 忽略无法解析的项
+                            # Ignore unparsable entries
                             continue
     return thresholds
 
 
 def main():
-    # 添加命令行参数解析
-    parser = argparse.ArgumentParser(description='解析规则文件并生成JSON格式输出')
-    parser.add_argument('-i', '--input', required=True, help='输入规则文件路径')
-    parser.add_argument('-o', '--output', required=True, help='输出目录路径')
-    parser.add_argument('--with-score', action='store_true', help='同时输出全局特定条目分数阈值')
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Parse a rule file and generate JSON output')
+    parser.add_argument('-i', '--input', required=True, help='Path to the input rule file')
+    parser.add_argument('-o', '--output', required=True, help='Path to the output directory')
+    parser.add_argument('--with-score', action='store_true', help='Also output global accession-specific score thresholds')
     
     args = parser.parse_args()
     
     input_file = args.input
     output_dir = args.output
     
-    # 确保输出目录存在
+    # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
-    # 输出文件路径
+    # Output file path
     output_file = os.path.join(output_dir, "getrule.json")
     
     try:
-        # 解析规则文件
+        # Parse rule file
         rules = parse_rule_file(input_file)
         
-        # 将结果写入JSON文件
+        # Write results to JSON
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(rules, f, indent=2, ensure_ascii=False)
         
-        # 可选：输出特定条目分数阈值（单独文件，避免破坏下游消费者）
+        # Optional: write accession-specific score thresholds as a separate JSON file
         if args.with_score:
             score_file = os.path.join(output_dir, "score_thresholds.json")
             score_thresholds = parse_score_thresholds(input_file)
             with open(score_file, 'w', encoding='utf-8') as f:
                 json.dump(score_thresholds, f, indent=2, ensure_ascii=False)
         
-        print(f"规则已成功解析并保存到 {output_file}")
+        print(f"Rules were parsed successfully and saved to {output_file}")
         if args.with_score:
-            print(f"分数阈值已保存到 {score_file}")
+            print(f"Score thresholds were saved to {score_file}")
         
     except Exception as e:
-        print(f"处理过程中出现错误: {str(e)}")
+        print(f"An error occurred during processing: {str(e)}")
 
 
 if __name__ == "__main__":
