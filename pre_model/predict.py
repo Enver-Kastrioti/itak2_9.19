@@ -912,12 +912,8 @@ def main():
     parser.add_argument('--output-tf-list', action='store_true',
                        help='Output TF list to stdout for memory passing (default: False)')
     
-    parser.add_argument('--use-processed', action='store_true', default=True,
-                       help='Use processed protein FASTA for prediction')
-    parser.add_argument('--write-predicted-fasta', action='store_true', default=True,
-                       help='Write sequences predicted as TF to project output fasta subdirectory')
     parser.add_argument('--project-output', type=str, default=None,
-                       help='Project output directory path for writing predicted TF FASTA')
+                       help='Project output directory path')
     parser.add_argument('--mode', type=str, choices=['fast', 'full'], default='fast',
                        help='Sequence splitting mode: fast (contiguous chunks + tail) or full (sliding window). Default: fast')
     
@@ -988,44 +984,22 @@ def main():
     repo_root = os.path.dirname(script_dir)
     sys.path.append(repo_root)
     try:
-        from module.get_fasta import get_processed_fasta_path, read_fasta_to_dict, get_output_subdir
-        if args.use_processed:
-            processed_fasta = get_processed_fasta_path(args.fasta)
-            if not os.path.exists(processed_fasta):
-                from module.get_fasta import generate_protein_fasta_with_translation
-                generate_protein_fasta_with_translation(args.fasta)
-            sequences = []
-            for header, seq in read_fasta_to_dict(processed_fasta).items():
-                sequences.append({'header': header, 'sequence': seq})
-            predictions, tf_headers = predict_fasta(
-                model=model,
-                device=device,
-                threshold=args.threshold,
-                max_length=max_length,
-                batch_size=args.batch_size,
-                sequences=sequences,
-                mode=args.mode,
-                grad_cam_mode=args.grad_cam_mode,
-                 grad_cam_output_dir=grad_cam_dir,
-                 use_supplementary=args.use_supplementary,
-                 supplementary_only=args.supplementary_only,
-                 supp_model_paths=args.supp_models
-            )
-        else:
-            predictions, tf_headers = predict_fasta(
-                fasta_file=args.fasta,
-                model=model,
-                device=device,
-                threshold=args.threshold,
-                max_length=max_length,
-                batch_size=args.batch_size,
-                mode=args.mode,
-                grad_cam_mode=args.grad_cam_mode,
-                 grad_cam_output_dir=grad_cam_dir,
-                 use_supplementary=args.use_supplementary,
-                 supplementary_only=args.supplementary_only,
-                 supp_model_paths=args.supp_models
-            )
+        from module.get_fasta import generate_protein_sequences_in_memory
+        sequences = generate_protein_sequences_in_memory(args.fasta)
+        predictions, tf_headers = predict_fasta(
+            model=model,
+            device=device,
+            threshold=args.threshold,
+            max_length=max_length,
+            batch_size=args.batch_size,
+            sequences=sequences,
+            mode=args.mode,
+            grad_cam_mode=args.grad_cam_mode,
+            grad_cam_output_dir=grad_cam_dir,
+            use_supplementary=args.use_supplementary,
+            supplementary_only=args.supplementary_only,
+            supp_model_paths=args.supp_models
+        )
     except Exception:
         predictions, tf_headers = predict_fasta(
             fasta_file=args.fasta,
@@ -1036,10 +1010,10 @@ def main():
             batch_size=args.batch_size,
             mode=args.mode,
             grad_cam_mode=args.grad_cam_mode,
-             grad_cam_output_dir=grad_cam_dir,
-             use_supplementary=args.use_supplementary,
-             supplementary_only=args.supplementary_only,
-             supp_model_paths=args.supp_models
+            grad_cam_output_dir=grad_cam_dir,
+            use_supplementary=args.use_supplementary,
+            supplementary_only=args.supplementary_only,
+            supp_model_paths=args.supp_models
         )
     
     if predictions:
@@ -1059,61 +1033,11 @@ def main():
                 print(f"TF_HEADER:{header}")
             print("TF_LIST_END")
 
-        # Write predicted TF FASTA to project output/fasta directory
-        if args.write_predicted_fasta:
-            try:
-                from module.get_fasta import get_processed_fasta_path, read_fasta_to_dict
-                project_dir = args.project_output if args.project_output else get_project_output_dir(args.fasta)
-                fasta_dir = os.path.join(project_dir, 'protein_model_preclassification')
-                os.makedirs(fasta_dir, exist_ok=True)
-                processed_fasta = get_processed_fasta_path(args.fasta)
-                seq_dict = read_fasta_to_dict(processed_fasta) if os.path.exists(processed_fasta) else {}
-                out_fa = os.path.join(fasta_dir, f"{input_name}_tf_sequences.fasta")
-                with open(out_fa, 'w') as f:
-                    for p in predictions:
-                        if p['predicted_class'] == 'TF':
-                            header = p['header']
-                            seq = seq_dict.get(header)
-                            if seq:
-                                f.write(f">{header}\n")
-                                f.write(seq + "\n")
-                print(f"Predicted TF FASTA saved to: {out_fa}")
-            except Exception as e:
-                print(f"Failed to write predicted TF FASTA: {e}")
-        
         # Collect supplementary TFs if any
         supplementary_tfs = [p for p in predictions if p.get('note') == 'Supplementary']
 
         if supplementary_tfs:
-            # Define output path for supplementary only
-            # We try to put it in the same directory as the main TF output if possible
-            if args.write_predicted_fasta:
-                # Reconstruct the path logic from above
-                try:
-                    # We need to import these if not already imported, but they are likely imported or available
-                    # from module.get_fasta import get_processed_fasta_path # Assuming this is available
-                    
-                    project_dir = args.project_output if args.project_output else "output" # Fallback
-                    fasta_dir = os.path.join(project_dir, 'protein_model_preclassification')
-                    # Ensure dir exists
-                    os.makedirs(fasta_dir, exist_ok=True)
-                    
-                    input_name = os.path.splitext(os.path.basename(args.fasta))[0]
-                    supp_tf_fasta_file = os.path.join(fasta_dir, f"{input_name}_tf_sequences_supplementary.fasta")
-                    
-                    print(f"Predicted Supplementary TF FASTA saved to: {supp_tf_fasta_file}")
-                    with open(supp_tf_fasta_file, 'w', encoding='utf-8') as f:
-                        for res in supplementary_tfs:
-                            f.write(f">{res['header']}\n{res['sequence']}\n")
-                except Exception as e:
-                     print(f"Failed to write supplementary TF FASTA: {e}")
-            else:
-                 # Fallback to current directory if not writing to project output
-                 supp_tf_fasta_file = f"{os.path.splitext(os.path.basename(args.fasta))[0]}_supplementary.fasta"
-                 print(f"Predicted Supplementary TF FASTA saved to: {supp_tf_fasta_file}")
-                 with open(supp_tf_fasta_file, 'w', encoding='utf-8') as f:
-                     for res in supplementary_tfs:
-                         f.write(f">{res['header']}\n{res['sequence']}\n")
+            pass
 
         print(f"\n=== Prediction Completed ===")
         print(f"Total Sequences: {len(predictions)}")

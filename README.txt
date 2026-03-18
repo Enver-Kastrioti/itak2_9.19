@@ -38,60 +38,67 @@ External tools:
 
 Project Layout
 --------
+## Key Scripts
+- `itak2-v1.0.py`: main CLI entry point (analysis / prediction / Grad-CAM orchestration)
+- `pre_model/predict.py`: deep-learning preclassification (+ Grad-CAM heatmaps)
+- `module/`: pipeline modules (FASTA processing, IPR JSON parsing, hmmscan processing, classification, checks)
+- `rule.txt`: TF family classification rules
+
+```text
 itak2/
-├── itak2-v1.0.py           # Main CLI entry point
-├── module/                 # Modules
-│   ├── check_dependencies.py    # Dependency checker
-│   ├── validate_fasta.py        # FASTA validation
-│   ├── classification.py        # TF family classification
-│   ├── get_fasta.py             # Sequence extraction / FASTA utilities
-│   ├── get_json.py              # InterProScan JSON processing
-│   ├── get_rule.py              # Rule file parsing
-│   └── selfbuild_hmm.py         # hmmscan result processing
-├── pre_model/              # Prediction model assets
-│   ├── model.pth               # Deep learning model file
-│   └── predict.py              # Prediction script
-│   └── supplementary_model/     # Supplementary models (optional)
-├── db/                     # Database assets
-│   ├── interproscan/           # InterProScan program and databases
-├── hmm/                    # Custom HMM database (used by hmmscan)
+├── itak2-v1.0.py
+├── module/
+│   ├── check_dependencies.py
+│   ├── validate_fasta.py
+│   ├── classification.py
+│   ├── get_fasta.py
+│   ├── get_json.py
+│   ├── get_rule.py
+│   └── selfbuild_hmm.py
+├── pre_model/
+│   ├── model.pth
+│   ├── predict.py
+│   └── supplementary_model/
+├── db/
+│   └── interproscan/
+├── hmm/
 │   └── self_build.hmm
-├── Grad-Cam/               # Standalone Grad-CAM script (optional)
-│   └── grad-Cam.py
-├── rule.txt                # TF family classification rules
-├── output/                 # Output directory
-├── temp/                   # Temporary files
-└── test_protein.fasta      # Example input FASTA
+├── rule.txt
+├── output/
+├── temp/
+└── test_protein.fasta
+```
 
 Installation
 --------
-1. Ensure Python 3.7+ is installed
-2. Install required Python packages:
-   pip install biopython pandas numpy
+## Requirements
+- Python 3.7+
+- Java 8+ (InterProScan)
+- HMMER 3.0+ (`hmmscan`)
+- PyTorch (only if you use `--predict` / `--list-predict` / `--grad-cam-mode`)
 
-3. Install PyTorch (optional; required for prediction):
-   # CPU
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-   
-   # GPU (CUDA 11.8)
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+## Python Packages
+```bash
+pip install biopython pandas numpy
+```
 
-4. Install HMMER:
-   # Ubuntu/Debian
-   sudo apt-get install hmmer
-   
-   # CentOS/RHEL
-   sudo yum install hmmer
-   
-   # macOS
-   brew install hmmer
+Optional (prediction / Grad-CAM):
+```bash
+# CPU
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-5. Ensure Java is available (required by InterProScan):
-   java -version
+# GPU (CUDA 11.8)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
 
-6. Database preparation (db/):
-   - The program checks whether db/ is ready at runtime. If missing, it attempts to extract db.tar.gz or download and prepare the assets via module/db_manager.py.
-   - If you provide an external InterProScan via --interproscan (i.e., not the iTAK2-managed InterProScan), downloading the bundled db/ assets is not required.
+## InterProScan Database (db/)
+- If you use the bundled InterProScan, make sure `db/` exists or `db.tar.gz` is available in the project root.
+- If you use an external InterProScan via `--interproscan /path/to/interproscan.sh`, you can skip the bundled `db/`.
+
+## Deploy / Install from GitHub
+```bash
+git clone https://github.com/Enver-Kastrioti/itak2_9.19.git
+```
 
 Usage
 --------
@@ -149,14 +156,16 @@ Examples
 7. Check dependencies:
    python itak2-v1.0.py --check-deps
 
-8. Multi-threshold batch outputs (predict once, classify multiple times):
-   python itak2-v1.0.py --list-predict -i test_protein.fasta -o /path/to/output
+8. Use supplementary models (requires --predict):
+   python itak2-v1.0.py --predict --use-supplementary -i input.fasta
+   python itak2-v1.0.py --predict --supplementary-only -i input.fasta
+   python itak2-v1.0.py --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
 
-9. Use supplementary models:
-   python itak2-v1.0.py --predict --use-supplementary -i test_protein.fasta
-
-10. Grad-CAM heatmaps (generate PNGs for classified TF sequences):
-   python itak2-v1.0.py --predict --grad-cam-mode fast -i test_protein.fasta
+9. Grad-CAM heatmaps (requires --predict):
+   - fast: runs after classification, using the classified TF FASTA under result/ (batch mode)
+   - all: runs on the original input FASTA (all sequences)
+   python itak2-v1.0.py --predict --grad-cam-mode fast -i input.fasta
+   python itak2-v1.0.py --predict --grad-cam-mode all -i input.fasta
 
 Outputs
 --------
@@ -192,27 +201,33 @@ Workflow
 6. TF family classification: apply rule-based family assignment
 7. Output reporting: write classification reports and FASTA files
 
-Troubleshooting
+FAQ / Troubleshooting
 --------
 
-Common issues:
+1) db download / preparation failed (timeout / network error)
+   - Download `db.tar.gz` manually, then place it in the project root (same directory as `itak2-v1.0.py`).
+   - Re-run the program (it will try to extract / prepare db assets automatically), or extract manually:
+     ```bash
+     tar -xzf db.tar.gz
+     ```
+   - If you already have a working InterProScan, prefer using it directly:
+     ```bash
+     python itak2-v1.0.py -i input.fasta --interproscan /path/to/interproscan.sh
+     ```
 
-1. "Dependency checks failed"
-   - Verify required Python packages are installed
-   - Confirm external tools are available on PATH
-   - Run --check-deps for detailed diagnostics
+2) "Dependency checks failed"
+   - Ensure Python packages are installed and `java` / `hmmscan` are available on PATH.
+   - Run:
+     ```bash
+     python itak2-v1.0.py --check-deps
+     ```
 
-2. "FASTA validation failed"
-   - Confirm the FASTA file format is valid
-   - Verify sequences are protein sequences
-   - Remove asterisks (*) from sequences
+3) "FASTA validation failed"
+   - Ensure input is valid FASTA and sequences are proteins.
+   - Remove `*` (stop codon) and unexpected characters.
 
-3. "InterProScan failed"
-   - Verify Java is installed and accessible
-   - Check integrity of InterProScan databases
-   - Ensure sufficient disk space
+4) "InterProScan failed"
+   - Check `java -version`, disk space, and InterProScan path (`--interproscan` if needed).
 
-4. "Prediction is unavailable"
-   - Install PyTorch: pip install torch
-   - Confirm model.pth exists
-   - Verify predict.py is present and intact
+5) "Prediction is unavailable" / Grad-CAM not working
+   - Install PyTorch and ensure `pre_model/model.pth` and `pre_model/predict.py` exist.

@@ -139,6 +139,37 @@ def setup_project_output(fasta_file, output=None):
     project_output.mkdir(parents=True, exist_ok=True)
     return project_output
 
+def cleanup_processed_fasta(project_output, fasta_file):
+    try:
+        import importlib.util
+        get_fasta_path = MODULE_DIR / "get_fasta.py"
+        spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        processed_fasta = Path(module.get_processed_fasta_path(fasta_file, project_output))
+    except Exception:
+        processed_fasta = Path(project_output) / f"{Path(fasta_file).stem}_protein_replaced.fasta"
+
+    try:
+        if processed_fasta.exists() and processed_fasta.is_file():
+            processed_fasta.unlink()
+            return True
+    except Exception:
+        return False
+    return False
+
+def resolve_existing_project_output(fasta_file, output=None):
+    if output:
+        return Path(output)
+
+    output_base = SCRIPT_DIR / "output"
+    stem = Path(fasta_file).stem
+    candidates = [p for p in output_base.glob(f"{stem}*") if p.is_dir()]
+    if not candidates:
+        return output_base / stem
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0]
+
 # Analysis-module pipeline
 def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=False, score_threshold=1.0, classification_mode='specific'):
     """
@@ -1033,8 +1064,6 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         if debug:
             cmd.append("--debug")
         
-        # In non-debug mode, TF FASTA is produced by the prediction script
-        
         print(f"Executing command: {' '.join(cmd)}")
         
         # Run prediction
@@ -1072,30 +1101,20 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                 spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                processed_fasta = module.get_processed_fasta_path(fasta_file, project_output)
+                processed_fasta = Path(module.get_processed_fasta_path(fasta_file, project_output))
                 if not processed_fasta.exists():
-                    module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
+                    out = module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
+                    processed_fasta = Path(out) if out else Path(fasta_file)
             except Exception:
                 processed_fasta = Path(fasta_file)
             
-            if debug:
-                # Debug mode: extract based on the CSV results
-                prediction_file = output_file
-                if not prediction_file.exists():
-                    print(f"Warning: prediction result file not found: {prediction_file}")
-                    return False
-                
-                print(f"Using prediction result file: {prediction_file}")
-                tf_fasta = extract_tf_sequences_from_csv(str(processed_fasta), str(prediction_file), str(fasta_output_dir), threshold)
-            else:
-                # Non-debug mode: use the TF FASTA written by the prediction script
-                tf_fasta_path = fasta_output_dir / f"{fasta_basename}_tf_sequences.fasta"
-                if tf_fasta_path.exists():
-                    tf_fasta = str(tf_fasta_path)
-                    print(f"TF FASTA generated: {tf_fasta}")
-                else:
-                    print("TF FASTA written by the prediction script was not found")
-                    return False
+            prediction_file = output_file
+            if not prediction_file.exists():
+                print(f"Warning: prediction result file not found: {prediction_file}")
+                return False
+            
+            print(f"Using prediction result file: {prediction_file}")
+            tf_fasta = extract_tf_sequences_from_csv(str(processed_fasta), str(prediction_file), str(fasta_output_dir), threshold)
             
             if tf_fasta is None:
                 print("Sequence extraction failed")
@@ -1150,23 +1169,34 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             else:
                 print("Analysis modules failed")
         
-        # 6. Generate Grad-CAM heatmaps for classified TFs
-        if grad_cam_mode != 'none' and tf_fasta:
-            print(f"\n6. Generating Grad-CAM heatmaps for classified TFs (mode: {grad_cam_mode})...")
+        # 6. Generate Grad-CAM heatmaps
+        if grad_cam_mode != 'none':
+            print(f"\n6. Generating Grad-CAM heatmaps (mode: {grad_cam_mode})...")
             step_start_time = time.time()
             
-            # Locate classified FASTA
             result_dir = project_output / "result"
-            tf_seq_basename = Path(tf_fasta).stem
-            classified_fasta = result_dir / f"{tf_seq_basename}_tf_classified.fasta"
+            input_stem = Path(fasta_file).stem
+
+            target_fasta = None
+            if grad_cam_mode == 'fast':
+                candidates = list(result_dir.glob(f"{input_stem}*_tf_classified.fasta"))
+                if candidates:
+                    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    target_fasta = str(candidates[0])
+                else:
+                    print(f"Classified FASTA not found under result/: {result_dir}; skipping Grad-CAM")
+            elif grad_cam_mode == 'all':
+                target_fasta = str(Path(fasta_file))
+            else:
+                target_fasta = str(Path(fasta_file))
             
-            if classified_fasta.exists():
+            if target_fasta:
                 # Temporary output file for Grad-CAM pass
-                temp_pred_csv = preclass_dir / f"{tf_seq_basename}_classified_prediction.csv"
+                temp_pred_csv = preclass_dir / f"{input_stem}_gradcam_prediction.csv"
                 
                 grad_cam_cmd = [
                     "python", str(PREDICT_SCRIPT),
-                    "--fasta", str(classified_fasta),
+                    "--fasta", str(target_fasta),
                     "--threshold", str(threshold),
                     "--output", str(temp_pred_csv),
                     "--project-output", str(project_output),
@@ -1188,7 +1218,11 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                 else:
                     print(f"Grad-CAM failed: {gc_result.stderr}")
             else:
-                print(f"Classified FASTA not found: {classified_fasta}; skipping Grad-CAM")
+                step_end_time = time.time()
+                step_duration = step_end_time - step_start_time
+                print(f"Grad-CAM skipped (elapsed: {format_duration(step_duration)})")
+            
+            cleanup_processed_fasta(project_output, fasta_file)
 
         # Total time
         predict_end_time = time.time()
@@ -1639,6 +1673,53 @@ Example usage:
             score_threshold=args.score,
             classification_mode=args.classification_mode
         )
+        if success and args.grad_cam_mode != 'none':
+            try:
+                print(f"\n=== Running Grad-CAM Visualization ({args.grad_cam_mode} Mode) ===")
+                project_output = resolve_existing_project_output(args.input, args.output)
+                result_dir = project_output / "result"
+                fasta_stem = Path(args.input).stem
+
+                target_fasta = None
+                if args.grad_cam_mode == 'fast':
+                    candidates = list(result_dir.glob(f"{fasta_stem}*_tf_classified.fasta"))
+                    if candidates:
+                        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                        target_fasta = str(candidates[0])
+                        print(f"Using result FASTA for fast Grad-CAM: {target_fasta}")
+                    else:
+                        print(f"Classified FASTA not found under result/: {result_dir}; skipping Grad-CAM")
+                        target_fasta = None
+                else:
+                    target_fasta = str(args.input)
+                    print(f"Using original input FASTA for Grad-CAM: {target_fasta}")
+
+                preclass_dir = project_output / "protein_model_preclassification"
+                preclass_dir.mkdir(exist_ok=True)
+                output_file = preclass_dir / f"{fasta_stem}_prediction.csv"
+
+                if target_fasta:
+                    cmd = [
+                        "python", str(PREDICT_SCRIPT),
+                        "--fasta", str(target_fasta),
+                        "--threshold", str(args.threshold),
+                        "--output", str(output_file),
+                        "--project-output", str(project_output),
+                        "--mode", args.predict_mode,
+                        "--grad-cam-mode", str(args.grad_cam_mode)
+                    ]
+                    if args.debug:
+                        cmd.append("--debug")
+                    print(f"Executing Grad-CAM command: {' '.join(cmd)}")
+                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
+                    if result.returncode == 0:
+                        print("Grad-CAM heatmaps generated successfully")
+                    else:
+                        print(f"Grad-CAM failed: {result.stderr}")
+
+                cleanup_processed_fasta(project_output, args.input)
+            except Exception as e:
+                print(f"Error while running Grad-CAM: {e}")
     elif args.list_predict:
         print("Using List Predict mode (predict once, classify under multiple thresholds)")
 
@@ -1716,9 +1797,9 @@ Example usage:
         # Direct analysis mode
         print("Using direct analysis mode (skipping prediction)")
         
-        # Fast Grad-CAM requires prediction dependencies
-        if args.grad_cam_mode == 'fast':
-            print("Note: fast Grad-CAM is enabled; the model will be executed to generate heatmaps")
+        # Grad-CAM requires prediction dependencies
+        if args.grad_cam_mode != 'none':
+            print(f"Note: Grad-CAM is enabled (mode: {args.grad_cam_mode}); the model will be executed to generate heatmaps")
             if DependencyChecker:
                 checker = DependencyChecker(interproscan_path=args.interproscan)
                 prediction_ok, error_msg = checker.check_prediction_dependencies()
@@ -1738,31 +1819,28 @@ Example usage:
             interproscan_path=args.interproscan
         )
         
-        # If analysis succeeds and fast Grad-CAM is enabled, run predict.py to generate heatmaps
-        if success and args.grad_cam_mode == 'fast':
+        # If analysis succeeds and Grad-CAM is enabled, run predict.py to generate heatmaps
+        if success and args.grad_cam_mode != 'none':
             try:
-                print("\n=== Running Grad-CAM Visualization (Fast Mode) ===")
-                # Project output directory must match analyze_sequences_directly
-                project_output = setup_project_output(args.input, args.output)
+                print(f"\n=== Running Grad-CAM Visualization ({args.grad_cam_mode} Mode) ===")
+                project_output = resolve_existing_project_output(args.input, args.output)
                 
-                # Locate classified FASTA
                 result_dir = project_output / "result"
                 fasta_stem = Path(args.input).stem
-                
-                classified_fasta = None
-                # Prefer files containing tf_classified
-                candidates = list(result_dir.glob(f"{fasta_stem}*_tf_classified.fasta"))
-                if candidates:
-                    # Sort by mtime; use latest
-                    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-                    classified_fasta = candidates[0]
-                
-                target_fasta = classified_fasta if classified_fasta else args.input
-                
-                if classified_fasta:
-                    print(f"Using classified FASTA: {classified_fasta}")
+
+                target_fasta = None
+                if args.grad_cam_mode == 'fast':
+                    candidates = list(result_dir.glob(f"{fasta_stem}*_tf_classified.fasta"))
+                    if candidates:
+                        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                        target_fasta = str(candidates[0])
+                        print(f"Using result FASTA for fast Grad-CAM: {target_fasta}")
+                    else:
+                        print(f"Classified FASTA not found under result/: {result_dir}; skipping Grad-CAM")
+                        target_fasta = None
                 else:
-                    print(f"Classified FASTA not found; using original input: {args.input}")
+                    target_fasta = str(args.input)
+                    print(f"Using original input FASTA for Grad-CAM: {target_fasta}")
                 
                 # Create preclassification directory (required by predict.py)
                 preclass_dir = project_output / "protein_model_preclassification"
@@ -1771,32 +1849,30 @@ Example usage:
                 # Output filename
                 output_file = preclass_dir / f"{fasta_stem}_prediction.csv"
                 
-                # Command
-                cmd = [
-                    "python", str(PREDICT_SCRIPT),
-                    "--fasta", str(target_fasta),
-                    "--threshold", str(args.threshold),
-                    "--output", str(output_file),
-                    "--project-output", str(project_output),
-                    "--mode", args.predict_mode,
-                    "--grad-cam-mode", "fast"
-                ]
+                if target_fasta:
+                    cmd = [
+                        "python", str(PREDICT_SCRIPT),
+                        "--fasta", str(target_fasta),
+                        "--threshold", str(args.threshold),
+                        "--output", str(output_file),
+                        "--project-output", str(project_output),
+                        "--mode", args.predict_mode,
+                        "--grad-cam-mode", str(args.grad_cam_mode)
+                    ]
                 
-                if args.debug:
-                    cmd.append("--debug")
+                    if args.debug:
+                        cmd.append("--debug")
                     
-                print(f"Executing Grad-CAM command: {' '.join(cmd)}")
+                    print(f"Executing Grad-CAM command: {' '.join(cmd)}")
                 
-                # Execute
-                result = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
+                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
                 
-                if result.returncode == 0:
-                    print("Grad-CAM heatmaps generated successfully")
-                    if result.stdout:
-                         # Keep output minimal
-                         pass 
-                else:
-                    print(f"Grad-CAM failed: {result.stderr}")
+                    if result.returncode == 0:
+                        print("Grad-CAM heatmaps generated successfully")
+                    else:
+                        print(f"Grad-CAM failed: {result.stderr}")
+                
+                cleanup_processed_fasta(project_output, args.input)
                     
             except Exception as e:
                 print(f"Error while running Grad-CAM: {e}")
