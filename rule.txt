@@ -1,3 +1,28 @@
+# Rule file format (rule.txt)
+#
+# Fields:
+#   ID:        serial number
+#   Name:      family name
+#   Family:    family
+#   Required:  required domains
+#   Auxiliary: auxiliary domains
+#   Forbidden: forbidden domains
+#   Type:      type (TF: transcription factor; TR: transcriptional regulator; GTF: general transcription factor)
+#   Desc:      description
+#   Score:     global score thresholds for specific accessions
+#
+# Required syntax:
+#   - Use '#' to represent AND
+#   - Use ':' to represent OR
+#   - Use '(' and ')' for grouping in complex expressions
+#   - Use '&N' after a domain to require copy number >= N (e.g., IPR001471&2)
+#
+# Forbidden syntax:
+#   - Use ':' to list forbidden domains (OR semantics)
+#   - If a sequence contains any forbidden domain for a family, it will not be assigned to that family
+#   - Forbidden domains are introduced for classification convenience and are mainly statistics-driven,
+#     not necessarily supported by direct biological experimental evidence
+
 ID:T9999
 Name:Others
 Family:Others

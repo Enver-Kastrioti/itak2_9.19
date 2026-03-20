@@ -27,7 +27,7 @@ def parse_specific_thresholds_from_rule(rule_file_path):
             blocks = ''.join(f.readlines()).strip().split('//')
         for block in blocks:
             block = block.strip()
-            if not block or block.startswith('#'):
+            if not block:
                 continue
             for raw_line in block.split('\n'):
                 line = raw_line.strip()

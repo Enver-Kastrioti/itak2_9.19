@@ -170,7 +170,7 @@ def parse_score_thresholds(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         blocks = ''.join(file.readlines()).strip().split('//')
         for block in blocks:
-            if not block.strip() or block.strip().startswith('#'):
+            if not block.strip():
                 continue
             # Scan for 'Score:' lines
             for line in _iter_clean_lines(block):
