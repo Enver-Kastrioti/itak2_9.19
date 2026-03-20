@@ -1,6 +1,6 @@
-================================================================================
-                      iTAK2 - Transcription Factor Prediction and Analysis
-================================================================================
+---
+# iTAK2 - Transcription Factor Prediction and Analysis
+---
 
 Overview
 --------
@@ -103,15 +103,17 @@ git clone https://github.com/Enver-Kastrioti/itak2_9.19.git
 Usage
 --------
 
-Syntax:
+## Syntax
+```bash
 python itak2-v1.0.py [options] -i <input_file>
+```
 
-Primary arguments:
--i, --input              Input FASTA file path (required except with --check-deps)
--o, --output             Output directory path (optional; default: output/<input_basename>/)
--t, --threshold          Prediction threshold in [0,1] (default: 0.1; affects prediction only)
---score                  Score threshold for InterProScan filtering (default: 1.0)
---classification-mode    Classification mode: specific (specificity-first) or score (score-first, default)
+## Primary arguments
+- `-i, --input`: Input FASTA file path (required except with --check-deps)
+- `-o, --output`: Output directory path (optional; default: output/<input_basename>/)
+- `-t, --threshold`: Prediction threshold in [0,1] (default: 0.1; affects prediction only)
+- `--score`: Score threshold for InterProScan filtering (default: 1.0)
+- `--classification-mode`: Classification mode: specific (specificity-first) or score (score-first, default)
 
 Feature options:
 - -test, --test-mode      Test mode: skip InterProScan/hmmscan and validate classification using existing result files
@@ -170,25 +172,27 @@ Outputs
 --------
 The program creates the following files and directories under the output directory:
 
-<project_output>/                         # Project output directory (default: output/<input_basename>/)
-├── protein_model_preclassification/      # Prediction outputs (only with --predict/--list-predict)
-│   ├── <name>_prediction.csv             # Predictions for all sequences
-│   ├── <name>_prediction_tf_only.csv     # Subset with TF_Probability >= threshold
-│   └── <name>_tf_sequences.fasta         # Extracted TF sequences
-├── InterproScan/                         # InterProScan output directory
+```text
+<project_output>/                          # Project output directory (default: output/<input_basename>/)
+├── protein_model_preclassification/       # Prediction outputs (only with --predict/--list-predict)
+│   ├── <name>_prediction.csv              # Predictions for all sequences
+│   ├── <name>_prediction_tf_only.csv      # Subset with TF_Probability >= threshold
+│   └── <name>_tf_sequences.fasta          # Extracted TF sequences
+├── InterproScan/                          # InterProScan output directory
 │   └── <input>.json
-├── hmmscan/                              # hmmscan output directory
+├── hmmscan/                               # hmmscan output directory
 │   └── result.tbl
-├── getrule.json                         # Debug output (--debug): parsed classification rules
-└── result/                               # Classification results
+├── getrule.json                           # Debug output (--debug): parsed classification rules
+└── result/                                # Classification results
     ├── match_tbl.txt                      # Final TF family classification results (table)
     ├── <name>_tf_classified.fasta         # Classified TF sequences
     ├── match.json                         # Debug output (--debug)
     ├── processed_ipr_domains.json         # Domain architecture JSON (sequence ↔ domain hits; optional)
     └── pfamspec.json                      # PFAM spec JSON used for classification (optional; written with --debug)
+```
 
 Grad-CAM outputs:
-- Written to <project_output>/<name>_gradcam/ by default, with one PNG per sequence (only when --grad-cam-mode is enabled)
+- Written to `<project_output>/<name>_gradcam/` by default, with one PNG per sequence (only when --grad-cam-mode is enabled)
 
 Workflow
 --------
