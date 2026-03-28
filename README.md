@@ -1,19 +1,21 @@
 ---
-# iTAK3 - Transcription Factor Prediction and Analysis
+# iTAK3 - Transcription Factor and Protein Kinase Analysis
 ---
 
 Overview
 --------
 iTAK3 is a bioinformatics tool for transcription factor (TF) prediction and analysis. It integrates
 deep-learning-based preclassification with conventional sequence/domain analyses to identify and
-classify TFs from protein sequences.
+classify TFs from protein sequences. The current workflow also includes protein kinase (PK)
+identification and classification with bundled HMM profiles.
 
 Key Features
 --------
 1. TF prediction: use a deep learning model to predict whether protein sequences are potential TF/TR sequences
 2. Domain analysis: run InterProScan and hmmscan for domain annotation
 3. TF family classification: assign TF families based on rule-based logic
-4. Output reporting: generate detailed reports and classified sequence FASTA files
+4. Protein kinase analysis: identify kinase domains and classify PKs with bundled Shiu/PPC models
+5. Output reporting: generate detailed reports and classified sequence FASTA files
 
 System Requirements
 --------
@@ -60,7 +62,8 @@ itak3/
 │   ├── predict.py
 │   └── supplementary_model/
 ├── db/
-│   └── interproscan/
+│   ├── interproscan/
+│   └── itak3_pk/
 ├── hmm/
 │   └── self_build.hmm
 ├── rule.txt
@@ -154,6 +157,12 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 - If you use the bundled InterProScan, make sure `db/` exists or `db.tar.gz` is available in the project root.
 - If you use an external InterProScan via `--interproscan /path/to/interproscan.sh`, you can skip the bundled `db/`.
 
+## Protein kinase database (`db/itak3_pk`)
+- iTAK3 bundles a reduced protein kinase HMM database under `db/itak3_pk/`.
+- This PK workflow uses `hmmscan` only; it does not depend on InterProScan.
+- Required profiles include `Tfam_domain.hmm`, `Plant_Pkinase_fam.hmm`, `PlantsPHMM3_89.hmm`,
+  `Pkinase_sub_WNK1.hmm`, `Pkinase_sub_MAK.hmm`, plus `GA_table.txt` and `PK_class_desc.txt`.
+
 ## Deploy / Install from GitHub
 ```bash
 git clone https://github.com/Enver-Kastrioti/itak2_9.19.git
@@ -186,6 +195,7 @@ Feature options:
 - --grad-cam-mode         Grad-CAM mode: none (default)/fast/all/positive (all/positive require --predict; --list-predict currently unsupported)
 - --appl                  InterProScan application list (comma-separated; defaults to common libraries)
 - --interproscan          Path to an external interproscan.sh (hmmscan will follow that InterProScan)
+- --skip-pk               Skip protein kinase identification/classification
 - --debug                 Enable debug outputs (default: off)
 
 Dependency checks:
@@ -227,6 +237,9 @@ Examples
    python itak3-v1.0.py --predict --grad-cam-mode fast -i input.fasta
    python itak3-v1.0.py --predict --grad-cam-mode all -i input.fasta
 
+10. Skip protein kinase analysis:
+   python itak3-v1.0.py -i test_protein.fasta --skip-pk
+
 Outputs
 --------
 The program creates the following files and directories under the output directory:
@@ -241,6 +254,11 @@ The program creates the following files and directories under the output directo
 │   └── <input>.json
 ├── hmmscan/                               # hmmscan output directory
 │   └── result.tbl
+├── protein_kinase/                        # Protein kinase outputs (default direct/predict modes)
+│   ├── pk_sequence.fasta
+│   ├── pk_classification.tsv
+│   ├── shiu_classification.txt
+│   └── PPC_classification.txt
 ├── getrule.json                           # Debug output (--debug): parsed classification rules
 └── result/                                # Classification results
     ├── match_tbl.txt                      # Final TF family classification results (table)
@@ -258,10 +276,11 @@ Workflow
 1. Input validation: validate FASTA structure and protein sequences
 2. Dependency checks: verify required tools and libraries
 3. Prediction stage (optional): run deep learning model inference for TF preclassification
-4. Domain analysis: run InterProScan and hmmscan
-5. Result processing: parse and filter analysis outputs
-6. TF family classification: apply rule-based family assignment
-7. Output reporting: write classification reports and FASTA files
+4. Protein kinase analysis: run bundled PK HMMs on the processed protein FASTA
+5. Domain analysis: run InterProScan and hmmscan
+6. Result processing: parse and filter analysis outputs
+7. TF family classification: apply rule-based family assignment
+8. Output reporting: write classification reports and FASTA files
 
 FAQ / Troubleshooting
 --------

@@ -93,6 +93,10 @@ json_file="$(find "$OUTPUT_DIR/InterproScan" -maxdepth 1 -name '*.json' -print -
 check_file "$json_file"
 check_file "$OUTPUT_DIR/hmmscan/result.tbl"
 check_file "$OUTPUT_DIR/result/match_tbl.txt"
+check_file "$OUTPUT_DIR/protein_kinase/pk_classification.tsv"
+check_file "$OUTPUT_DIR/protein_kinase/pk_sequence.fasta"
+check_file "$OUTPUT_DIR/protein_kinase/shiu_classification.txt"
+check_file "$OUTPUT_DIR/protein_kinase/PPC_classification.txt"
 
 if [[ "$RUN_PREDICT" -eq 1 ]]; then
   check_file "$OUTPUT_DIR/protein_model_preclassification/$(basename "${INPUT_FASTA%.*}")_prediction.csv"

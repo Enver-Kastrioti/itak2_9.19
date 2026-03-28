@@ -670,6 +670,29 @@ def _get_or_create_processed_fasta(fasta_file, output_dir):
     except Exception:
         return str(fasta_file)
 
+
+def _run_protein_kinase_analysis(fasta_file, project_output, enabled=True):
+    if not enabled:
+        print("Protein kinase analysis skipped (--skip-pk)")
+        return True
+
+    result = call_module_function(
+        "protein_kinase",
+        "run_protein_kinase_pipeline",
+        str(fasta_file),
+        str(project_output),
+    )
+    if not isinstance(result, dict) or not result.get("success"):
+        print("Protein kinase analysis failed")
+        return False
+
+    print(
+        "Protein kinase analysis completed: "
+        f"{result.get('count', 0)} sequences classified"
+    )
+    print(f"Protein kinase output: {result.get('output_dir', Path(project_output) / 'protein_kinase')}")
+    return True
+
 def _load_prediction_rows(prediction_csv):
     rows = []
     with open(prediction_csv, "r", encoding="utf-8") as f:
@@ -766,7 +789,7 @@ def _run_prediction_once(fasta_file, threshold, output_csv, project_output, pred
     if result.stdout:
         print(result.stdout)
 
-def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0, classification_mode="score", predict_mode="fast", interproscan_path=None, use_supplementary=False, supplementary_only=False, supp_models=None):
+def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0, classification_mode="score", predict_mode="fast", interproscan_path=None, use_supplementary=False, supplementary_only=False, supp_models=None, run_protein_kinase_analysis=False):
     thresholds = [None, 0.1, 0.3, 0.5, 0.7, 0.9]
 
     fasta_basename = Path(fasta_file).stem
@@ -791,6 +814,8 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
     print(f"Input file: {fasta_file}")
     print(f"Output root: {output_base}")
     print(f"Thresholds: {['NO_PREDICT' if t is None else int(t*100) for t in thresholds]}")
+    if run_protein_kinase_analysis:
+        print("Note: protein kinase analysis is currently skipped in --list-predict mode")
 
     _run_prediction_once(
         fasta_file=fasta_file,
@@ -819,6 +844,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
                 score_threshold=score_threshold,
                 classification_mode=classification_mode,
                 interproscan_path=interproscan_path,
+                run_protein_kinase_analysis=False,
             )
             if not success:
                 return False
@@ -1049,7 +1075,8 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                                 run_interproscan_analysis=True, run_hmmscan_analysis=True, 
                                 appl_list=None, debug=False, score_threshold=1.0, classification_mode='specific',
                                 predict_mode='fast', grad_cam_mode='none', interproscan_path=None,
-                                use_supplementary=False, supplementary_only=False, supp_models=None):
+                                use_supplementary=False, supplementary_only=False, supp_models=None,
+                                run_protein_kinase_analysis=True):
     # Record start time
     predict_start_time = time.time()
     
@@ -1069,6 +1096,8 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print(f"Prediction mode: {predict_mode}")
         if grad_cam_mode != 'none':
             print(f"Grad-CAM: enabled (mode: {grad_cam_mode})")
+
+        processed_fasta = _get_or_create_processed_fasta(fasta_file, project_output)
         
         # Build prediction command
         if not PREDICT_SCRIPT.exists():
@@ -1147,19 +1176,6 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             # Create FASTA output directory
             fasta_output_dir = project_output / "protein_model_preclassification"
             fasta_output_dir.mkdir(exist_ok=True)
-            # Use processed protein FASTA as source to avoid frame-suffix mismatches with the original input
-            try:
-                import importlib.util
-                get_fasta_path = MODULE_DIR / "get_fasta.py"
-                spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                processed_fasta = Path(module.get_processed_fasta_path(fasta_file, project_output))
-                if not processed_fasta.exists():
-                    out = module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
-                    processed_fasta = Path(out) if out else Path(fasta_file)
-            except Exception:
-                processed_fasta = Path(fasta_file)
             
             prediction_file = output_file
             if not prediction_file.exists():
@@ -1181,9 +1197,23 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         hmmscan_success = not run_hmmscan_analysis
         analysis_success = False
 
+        print("\n3. Running protein kinase analysis...")
+        step_start_time = time.time()
+        pk_success = _run_protein_kinase_analysis(
+            processed_fasta,
+            project_output,
+            enabled=run_protein_kinase_analysis,
+        )
+        step_end_time = time.time()
+        step_duration = step_end_time - step_start_time
+        if pk_success:
+            print(f"Protein kinase step completed (elapsed: {format_duration(step_duration)})")
+        else:
+            return False
+
         # Run InterProScan
         if run_interproscan_analysis and tf_fasta:
-            print("\n3. Running InterProScan...")
+            print("\n4. Running InterProScan...")
             step_start_time = time.time()
             
             interproscan_success = run_interproscan(tf_fasta, str(project_output), appl_list, interproscan_path)
@@ -1199,7 +1229,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
 
         # Run hmmscan
         if run_hmmscan_analysis and tf_fasta:
-            print("\n4. Running hmmscan...")
+            print("\n5. Running hmmscan...")
             step_start_time = time.time()
             
             hmmscan_success = run_hmmscan(tf_fasta, str(project_output), interproscan_path)
@@ -1215,7 +1245,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
 
         # Run classification analysis modules
         if run_interproscan_analysis and run_hmmscan_analysis and tf_fasta:
-            print("\n5. Running classification analysis...")
+            print("\n6. Running classification analysis...")
             step_start_time = time.time()
             
             analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
@@ -1231,7 +1261,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         
         # 6. Generate Grad-CAM heatmaps
         if grad_cam_mode != 'none':
-            print(f"\n6. Generating Grad-CAM heatmaps (mode: {grad_cam_mode})...")
+            print(f"\n7. Generating Grad-CAM heatmaps (mode: {grad_cam_mode})...")
             step_start_time = time.time()
             
             result_dir = project_output / "result"
@@ -1297,7 +1327,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print(f"Error during prediction workflow: {e}")
         return False
 # Direct analysis mode (no prediction)
-def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0, classification_mode='specific', interproscan_path=None):
+def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0, classification_mode='specific', interproscan_path=None, run_protein_kinase_analysis=True):
     # Record start time
     analysis_start_time = time.time()
     
@@ -1314,23 +1344,30 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print(f"Input file: {fasta_file}")
         print(f"Output directory: {project_output}")
         
-        try:
-            import importlib.util
-            get_fasta_path = MODULE_DIR / "get_fasta.py"
-            spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
-            get_fasta = module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            processed_fasta = module.get_processed_fasta_path(fasta_file, project_output)
-            if not Path(processed_fasta).exists():
-                module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
-        except Exception:
-            processed_fasta = fasta_file
+        processed_fasta = _get_or_create_processed_fasta(fasta_file, project_output)
         interproscan_success = False
         hmmscan_success = False
         analysis_success = False
 
+        print("\n1. Running protein kinase analysis...")
+        step_start_time = time.time()
+
+        pk_success = _run_protein_kinase_analysis(
+            processed_fasta,
+            project_output,
+            enabled=run_protein_kinase_analysis,
+        )
+
+        step_end_time = time.time()
+        step_duration = step_end_time - step_start_time
+
+        if pk_success:
+            print(f"Protein kinase step completed (elapsed: {format_duration(step_duration)})")
+        else:
+            return False
+
         # Run InterProScan
-        print("\n1. Running InterProScan...")
+        print("\n2. Running InterProScan...")
         step_start_time = time.time()
         
         interproscan_success = run_interproscan(processed_fasta, str(project_output), appl_list, interproscan_path)
@@ -1345,7 +1382,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             return False
 
         # Run hmmscan
-        print("\n2. Running hmmscan...")
+        print("\n3. Running hmmscan...")
         step_start_time = time.time()
         
         hmmscan_success = run_hmmscan(processed_fasta, str(project_output), interproscan_path)
@@ -1361,7 +1398,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
 
         # Run classification
         if interproscan_success and hmmscan_success:
-            print("\n3. Running classification analysis...")
+            print("\n4. Running classification analysis...")
             step_start_time = time.time()
             
             analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
@@ -1579,6 +1616,8 @@ Example usage:
     
     # External InterProScan path
     parser.add_argument('--interproscan', help='Path to interproscan.sh (hmmscan will follow the specified InterProScan)')
+    parser.add_argument('--skip-pk', action='store_true',
+                       help='Skip protein kinase identification/classification (enabled by default in direct/predict modes)')
 
     # Debug mode
     parser.add_argument('--debug', action='store_true', default=False,
@@ -1823,6 +1862,7 @@ Example usage:
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
             supp_models=args.supp_models,
+            run_protein_kinase_analysis=not args.skip_pk,
         )
     elif args.predict:
         # Prediction mode
@@ -1869,7 +1909,8 @@ Example usage:
             interproscan_path=args.interproscan,
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
-            supp_models=args.supp_models
+            supp_models=args.supp_models,
+            run_protein_kinase_analysis=not args.skip_pk,
         )
     else:
         # Direct analysis mode
@@ -1894,7 +1935,8 @@ Example usage:
             debug=args.debug,
             score_threshold=args.score,
             classification_mode=args.classification_mode,
-            interproscan_path=args.interproscan
+            interproscan_path=args.interproscan,
+            run_protein_kinase_analysis=not args.skip_pk,
         )
         
         # If analysis succeeds and Grad-CAM is enabled, run predict.py to generate heatmaps
