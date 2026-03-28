@@ -1500,53 +1500,53 @@ def main():
     # Record start time
     program_start_time = time.time()
     start_datetime = datetime.now()
-    print("\n=== iTAK2 Started ===")
+    print("\n=== iTAK3 Started ===")
     print(f"Start time: {start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"="*50)
     
     parser = argparse.ArgumentParser(
-        description="iTAK2 - transcription factor prediction and analysis tool",
+        description="iTAK3 - transcription factor prediction and analysis tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example usage:
   # 1) Analyze input sequences directly (skip prediction)
-  python itak2-v1.0.py -i input.fasta
+  python itak3-v1.0.py -i input.fasta
   
   # 2) Enable prediction: predict TFs, then run domain analysis and family classification
-  python itak2-v1.0.py --predict -i input.fasta -t 0.1
+  python itak3-v1.0.py --predict -i input.fasta -t 0.1
   
   # 3) Specify an output directory (default: output/<input_basename>/)
-  python itak2-v1.0.py --predict -i input.fasta -o /path/to/output
+  python itak3-v1.0.py --predict -i input.fasta -o /path/to/output
   
   # 4) Restrict InterProScan applications (run only selected libraries)
-  python itak2-v1.0.py -i input.fasta --appl CDD,Pfam,SMART
+  python itak3-v1.0.py -i input.fasta --appl CDD,Pfam,SMART
   
   # 5) Adjust InterProScan score filtering (retain only hits with score >= threshold)
-  python itak2-v1.0.py -i input.fasta --score 1.0
+  python itak3-v1.0.py -i input.fasta --score 1.0
   
   # 6) Classification policy: specific (specificity-first) or score (score-first, default)
-  python itak2-v1.0.py -i input.fasta --classification-mode specific
+  python itak3-v1.0.py -i input.fasta --classification-mode specific
   
   # 7) Prediction splitting mode: fast (default) or full (more comprehensive, slower)
-  python itak2-v1.0.py --predict -i input.fasta --predict-mode full
+  python itak3-v1.0.py --predict -i input.fasta --predict-mode full
   
   # 8) Use supplementary models (stacked with main model, or supplementary-only)
-  python itak2-v1.0.py --predict --use-supplementary -i input.fasta
-  python itak2-v1.0.py --predict --supplementary-only -i input.fasta
-  python itak2-v1.0.py --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
+  python itak3-v1.0.py --predict --use-supplementary -i input.fasta
+  python itak3-v1.0.py --predict --supplementary-only -i input.fasta
+  python itak3-v1.0.py --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
   
   # 9) Grad-CAM heatmaps (available only with --predict; fast runs after classification in batch)
-  python itak2-v1.0.py --predict --grad-cam-mode fast -i input.fasta
-  python itak2-v1.0.py --predict --grad-cam-mode all -i input.fasta
+  python itak3-v1.0.py --predict --grad-cam-mode fast -i input.fasta
+  python itak3-v1.0.py --predict --grad-cam-mode all -i input.fasta
   
   # 10) Test mode: skip InterProScan/hmmscan and validate classification using existing files
-  python itak2-v1.0.py -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
+  python itak3-v1.0.py -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
   
   # 11) Use an external interproscan.sh (hmmscan will follow the specified InterProScan)
-  python itak2-v1.0.py -i input.fasta --interproscan /path/to/interproscan.sh
+  python itak3-v1.0.py -i input.fasta --interproscan /path/to/interproscan.sh
   
   # 12) Check dependencies and exit
-  python itak2-v1.0.py --check-deps
+  python itak3-v1.0.py --check-deps
         """
     )
     
@@ -1965,7 +1965,7 @@ Example usage:
         end_datetime = datetime.now()
         total_runtime = program_end_time - program_start_time
         
-        print("\n=== iTAK 2.0 Finished ===")
+        print("\n=== iTAK3 Finished ===")
         print(f"End time: {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Total runtime: {format_duration(total_runtime)}")
         print(f"="*50)
@@ -1976,7 +1976,7 @@ Example usage:
     end_datetime = datetime.now()
     total_runtime = program_end_time - program_start_time
     
-    print("\n=== iTAK 2.0 Finished ===")
+    print("\n=== iTAK3 Finished ===")
     print(f"End time: {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Total runtime: {format_duration(total_runtime)}")
     print(f"="*50)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-iTAK 2.0 FASTA validation module.
+iTAK3 FASTA validation module.
 
 Validates whether the input FASTA file is well-formed, contains protein sequences,
 and does not include disallowed characters (e.g., '*').

@@ -112,7 +112,8 @@ def setup_db(project_root):
     # Assuming the file is released in the repo or hosted somewhere accessible.
     # Since I don't have the exact URL, I'll use a likely one or a placeholder.
     # User said "from githup download", so likely:
-    DB_DOWNLOAD_URL = "https://github.com/Enver-Kastrioti/itak2_9.19/releases/download/iTAK2/db.tar.gz" 
+    # Keep the current release asset URL until a renamed iTAK3 release asset is published.
+    DB_DOWNLOAD_URL = "https://github.com/Enver-Kastrioti/itak2_9.19/releases/download/iTAK2/db.tar.gz"
     EXPECTED_SHA256 = "220599853264a378abf6527b90004af35104848bf7240497d6901e45a8a47fbc"
     
     # 1. Check integrity

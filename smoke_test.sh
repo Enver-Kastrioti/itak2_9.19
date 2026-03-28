@@ -61,10 +61,10 @@ if [[ ! -f "$INPUT_FASTA" ]]; then
 fi
 
 CMD=()
-if [[ -x "$ROOT_DIR/run_itak2_local.sh" ]]; then
-  CMD=("$ROOT_DIR/run_itak2_local.sh")
+if [[ -x "$ROOT_DIR/run_itak3_local.sh" ]]; then
+  CMD=("$ROOT_DIR/run_itak3_local.sh")
 else
-  CMD=("$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/itak2-v1.0.py")
+  CMD=("$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/itak3-v1.0.py")
 fi
 
 rm -rf "$OUTPUT_DIR"

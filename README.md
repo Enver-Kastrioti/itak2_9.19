@@ -1,10 +1,10 @@
 ---
-# iTAK2 - Transcription Factor Prediction and Analysis
+# iTAK3 - Transcription Factor Prediction and Analysis
 ---
 
 Overview
 --------
-iTAK2 is a bioinformatics tool for transcription factor (TF) prediction and analysis. It integrates
+iTAK3 is a bioinformatics tool for transcription factor (TF) prediction and analysis. It integrates
 deep-learning-based preclassification with conventional sequence/domain analyses to identify and
 classify TFs from protein sequences.
 
@@ -39,14 +39,14 @@ External tools:
 Project Layout
 --------
 ## Key Scripts
-- `itak2-v1.0.py`: main CLI entry point (analysis / prediction / Grad-CAM orchestration)
+- `itak3-v1.0.py`: main CLI entry point (analysis / prediction / Grad-CAM orchestration)
 - `pre_model/predict.py`: deep-learning preclassification (+ Grad-CAM heatmaps)
 - `module/`: pipeline modules (FASTA processing, IPR JSON parsing, hmmscan processing, classification, checks)
 - `rule.txt`: TF family classification rules
 
 ```text
-itak2/
-├── itak2-v1.0.py
+itak3/
+├── itak3-v1.0.py
 ├── module/
 │   ├── check_dependencies.py
 │   ├── validate_fasta.py
@@ -117,10 +117,10 @@ This installer will:
 - install required Python packages
 - generate `db/interproscan/interproscan.local.properties`
 - generate `run_interproscan_local.sh`
-- generate `run_itak2_local.sh`
+- generate `run_itak3_local.sh`
 - configure the bundled InterProScan to use the platform helper binaries under `bin/`
-- run `python itak2-v1.0.py --check-deps`
-- optionally run a post-install smoke test through both InterProScan and the main iTAK workflow
+- run `python itak3-v1.0.py --check-deps`
+- optionally run a post-install smoke test through both InterProScan and the main iTAK3 workflow
 
 Generated runtime files can be removed with:
 ```bash
@@ -164,7 +164,7 @@ Usage
 
 ## Syntax
 ```bash
-python itak2-v1.0.py [options] -i <input_file>
+python itak3-v1.0.py [options] -i <input_file>
 ```
 
 ## Primary arguments
@@ -196,36 +196,36 @@ Examples
 --------
 
 1. Basic analysis (analyze input directly):
-   python itak2-v1.0.py -i test_protein.fasta
+   python itak3-v1.0.py -i test_protein.fasta
 
 2. Prediction workflow:
-   python itak2-v1.0.py --predict -i test_protein.fasta -t 0.1
+   python itak3-v1.0.py --predict -i test_protein.fasta -t 0.1
 
 3. Specify an output directory:
-   python itak2-v1.0.py --predict -i test_protein.fasta -o /path/to/output
+   python itak3-v1.0.py --predict -i test_protein.fasta -o /path/to/output
 
 4. Enable debug mode:
-   python itak2-v1.0.py --predict -i test_protein.fasta --debug
+   python itak3-v1.0.py --predict -i test_protein.fasta --debug
 
 5. Restrict InterProScan applications:
-   python itak2-v1.0.py -i test_protein.fasta --appl CDD,Pfam,SMART
+   python itak3-v1.0.py -i test_protein.fasta --appl CDD,Pfam,SMART
 
 6. Test mode:
-   python itak2-v1.0.py -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
+   python itak3-v1.0.py -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
 
 7. Check dependencies:
-   python itak2-v1.0.py --check-deps
+   python itak3-v1.0.py --check-deps
 
 8. Use supplementary models (requires --predict):
-   python itak2-v1.0.py --predict --use-supplementary -i input.fasta
-   python itak2-v1.0.py --predict --supplementary-only -i input.fasta
-   python itak2-v1.0.py --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
+   python itak3-v1.0.py --predict --use-supplementary -i input.fasta
+   python itak3-v1.0.py --predict --supplementary-only -i input.fasta
+   python itak3-v1.0.py --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
 
 9. Grad-CAM heatmaps (requires --predict):
    - fast: runs after classification, using the classified TF FASTA under result/ (batch mode)
    - all: runs on the original input FASTA (all sequences)
-   python itak2-v1.0.py --predict --grad-cam-mode fast -i input.fasta
-   python itak2-v1.0.py --predict --grad-cam-mode all -i input.fasta
+   python itak3-v1.0.py --predict --grad-cam-mode fast -i input.fasta
+   python itak3-v1.0.py --predict --grad-cam-mode all -i input.fasta
 
 Outputs
 --------
@@ -267,21 +267,21 @@ FAQ / Troubleshooting
 --------
 
 1) db download / preparation failed (timeout / network error)
-   - Download `db.tar.gz` manually, then place it in the project root (same directory as `itak2-v1.0.py`).
+   - Download `db.tar.gz` manually, then place it in the project root (same directory as `itak3-v1.0.py`).
    - Re-run the program (it will try to extract / prepare db assets automatically), or extract manually:
      ```bash
      tar -xzf db.tar.gz
      ```
    - If you already have a working InterProScan, prefer using it directly:
      ```bash
-     python itak2-v1.0.py -i input.fasta --interproscan /path/to/interproscan.sh
+     python itak3-v1.0.py -i input.fasta --interproscan /path/to/interproscan.sh
      ```
 
 2) "Dependency checks failed"
    - Ensure Python packages are installed and `java` / `hmmscan` are available on PATH.
    - Run:
      ```bash
-     python itak2-v1.0.py --check-deps
+     python itak3-v1.0.py --check-deps
      ```
 
 3) "FASTA validation failed"

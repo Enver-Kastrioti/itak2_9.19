@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-iTAK 2.0 dependency checking module.
+iTAK3 dependency checking module.
 
 Checks whether the required Python packages and external tools are available.
 """
@@ -434,7 +434,7 @@ class DependencyChecker:
             skip_db_check (bool): Whether to skip db directory preparation/checks.
             test_mode (bool): Whether running in test mode (skip InterProScan/hmmscan checks).
         """
-        print("Starting iTAK 2.0 dependency checks...")
+        print("Starting iTAK3 dependency checks...")
         print("=" * 60)
         
         all_dependencies_met = True
@@ -576,7 +576,7 @@ class DependencyChecker:
         # Summary
         print("\n" + "=" * 60)
         if all_dependencies_met:
-            print("[OK] All required dependencies are satisfied. iTAK 2.0 is ready to run.")
+            print("[OK] All required dependencies are satisfied. iTAK3 is ready to run.")
             if self.missing_optional_dependencies:
                 print("[WARN] The following optional dependencies are missing; some features may be unavailable:")
                 for dep in self.missing_optional_dependencies:

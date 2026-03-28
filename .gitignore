@@ -13,6 +13,7 @@ output/
 temp/
 run_interproscan_local.sh
 run_itak2_local.sh
+run_itak3_local.sh
 db/interproscan/interproscan.local.properties
 db/**
 !db/interproscan/
