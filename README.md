@@ -18,7 +18,7 @@ Key Features
 System Requirements
 --------
 - Python 3.7+
-- Java 8+ (required by InterProScan)
+- Java 11+ (required by InterProScan)
 - HMMER 3.0+ (hmmscan)
 
 Dependencies
@@ -73,9 +73,59 @@ Installation
 --------
 ## Requirements
 - Python 3.7+
-- Java 8+ (InterProScan)
+- Java 11+ (InterProScan)
 - HMMER 3.0+ (`hmmscan`)
 - PyTorch (only if you use `--predict` / `--list-predict` / `--grad-cam-mode`)
+
+## Recommended installer
+```bash
+./install_runtime.sh
+```
+
+Optional:
+```bash
+# inspect current local runtime status
+./install_runtime.sh --status
+
+# remove generated runtime files
+./install_runtime.sh --clean-runtime
+
+# also install PyTorch CPU packages
+./install_runtime.sh --with-predict
+
+# Apple Silicon / Metal
+./install_runtime.sh --with-predict --predict-backend mps
+
+# CUDA example
+./install_runtime.sh --with-predict --predict-backend cuda --torch-index-url https://download.pytorch.org/whl/cu121
+
+# run a post-install smoke test
+./install_runtime.sh --smoke-test
+
+# install into the current Python without creating .venv
+./install_runtime.sh --no-venv
+```
+
+This installer will:
+- create or reuse a Python runtime
+- install required Python packages
+- generate `db/interproscan/interproscan.local.properties`
+- generate `run_interproscan_local.sh`
+- generate `run_itak2_local.sh`
+- configure the bundled InterProScan to use the platform helper binaries under `bin/`
+- run `python itak2-v1.0.py --check-deps`
+- optionally run a post-install smoke test through both InterProScan and the main iTAK workflow
+
+Generated runtime files can be removed with:
+```bash
+./install_runtime.sh --clean-runtime
+./install_runtime.sh --clean-runtime --remove-venv
+```
+
+You can inspect the current local runtime state with:
+```bash
+./install_runtime.sh --status
+```
 
 ## Python Packages
 ```bash
@@ -87,8 +137,11 @@ Optional (prediction / Grad-CAM):
 # CPU
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# GPU (CUDA 11.8)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# Apple Silicon / Metal
+pip install torch torchvision torchaudio
+
+# GPU (CUDA)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ## InterProScan Database (db/)

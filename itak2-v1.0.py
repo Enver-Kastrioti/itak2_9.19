@@ -21,6 +21,20 @@ except ImportError:
     print("Warning: Unable to import the dependency checker module; dependency checks will be skipped")
     DependencyChecker = None
 
+try:
+    from module.runtime_tools import (
+        activate_bundled_interproscan_binaries,
+        build_runtime_env,
+        resolve_helper_executable,
+        resolve_java_executable,
+    )
+except ImportError:
+    print("Warning: Unable to import runtime tool helpers; platform-specific binary setup will be limited")
+    activate_bundled_interproscan_binaries = None
+    build_runtime_env = None
+    resolve_helper_executable = None
+    resolve_java_executable = None
+
 # Import FASTA validation module
 try:
     from module.validate_fasta import FastaValidator
@@ -869,6 +883,20 @@ def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=N
              interproscan_script = str(interproscan_path)
         else:
              interproscan_script = str(INTERPROSCAN_SCRIPT)
+
+        if (
+            activate_bundled_interproscan_binaries is not None
+            and Path(interproscan_script).resolve() == INTERPROSCAN_SCRIPT.resolve()
+        ):
+            activated, activation_msg = activate_bundled_interproscan_binaries(SCRIPT_DIR)
+            print(activation_msg)
+            if not activated:
+                return False
+
+        java_executable = resolve_java_executable(SCRIPT_DIR) if resolve_java_executable else None
+        if java_executable is None:
+            print("Error: Java runtime not found. Install Java 11+ or place a JDK under .local-jdk/")
+            return False
              
         cmd = [interproscan_script, '-i', fasta_file, '-f', 'json', '-d', str(ipr_output_dir)]
         
@@ -878,7 +906,12 @@ def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=N
         print(f"Running command: {' '.join(cmd)}")
         
         # Execute
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+        )
         
         if result.returncode == 0:
             print("InterProScan completed")
@@ -912,6 +945,12 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
     # Prefer bundled hmmscan (db/interproscan/bin/hmmer/hmmer3/hmmscan)
     
     hmmscan_executable = None
+
+    if resolve_helper_executable is not None:
+        helper_hmmscan = resolve_helper_executable(SCRIPT_DIR, "hmmer3", "hmmscan")
+        if helper_hmmscan is not None:
+            hmmscan_executable = str(helper_hmmscan)
+            print(f"Using platform helper hmmscan: {hmmscan_executable}")
     
     if interproscan_path:
         # Try hmmscan bundled with a user-specified InterProScan
@@ -978,7 +1017,8 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
             cmd,
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
         )
         
         print("hmmscan completed successfully")
@@ -1124,6 +1164,10 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             step_duration = step_end_time - step_start_time
             print(f"TF sequences saved to: {tf_fasta} (elapsed: {format_duration(step_duration)})")
         
+        interproscan_success = not run_interproscan_analysis
+        hmmscan_success = not run_hmmscan_analysis
+        analysis_success = False
+
         # Run InterProScan
         if run_interproscan_analysis and tf_fasta:
             print("\n3. Running InterProScan...")
@@ -1138,7 +1182,8 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                 print(f"InterProScan completed (elapsed: {format_duration(step_duration)})")
             else:
                 print("InterProScan failed")
-        
+                return False
+
         # Run hmmscan
         if run_hmmscan_analysis and tf_fasta:
             print("\n4. Running hmmscan...")
@@ -1153,7 +1198,8 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                 print(f"hmmscan completed (elapsed: {format_duration(step_duration)})")
             else:
                 print("hmmscan failed")
-        
+                return False
+
         # Run classification analysis modules
         if run_interproscan_analysis and run_hmmscan_analysis and tf_fasta:
             print("\n5. Running classification analysis...")
@@ -1168,6 +1214,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                 print(f"Analysis modules completed (elapsed: {format_duration(step_duration)})")
             else:
                 print("Analysis modules failed")
+                return False
         
         # 6. Generate Grad-CAM heatmaps
         if grad_cam_mode != 'none':
@@ -1265,6 +1312,10 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
                 module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
         except Exception:
             processed_fasta = fasta_file
+        interproscan_success = False
+        hmmscan_success = False
+        analysis_success = False
+
         # Run InterProScan
         print("\n1. Running InterProScan...")
         step_start_time = time.time()
@@ -1278,7 +1329,8 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             print(f"InterProScan completed (elapsed: {format_duration(step_duration)})")
         else:
             print("InterProScan failed")
-        
+            return False
+
         # Run hmmscan
         print("\n2. Running hmmscan...")
         step_start_time = time.time()
@@ -1292,7 +1344,8 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             print(f"hmmscan completed (elapsed: {format_duration(step_duration)})")
         else:
             print("hmmscan failed")
-        
+            return False
+
         # Run classification
         if interproscan_success and hmmscan_success:
             print("\n3. Running classification analysis...")
@@ -1307,6 +1360,9 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
                 print(f"Analysis modules completed (elapsed: {format_duration(step_duration)})")
             else:
                 print("Analysis modules failed")
+                return False
+        else:
+            return False
         
         # Total time
         analysis_end_time = time.time()

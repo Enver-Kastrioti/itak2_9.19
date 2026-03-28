@@ -12,7 +12,19 @@ import importlib
 import shutil
 from pathlib import Path
 import os
+import platform
 import tarfile
+
+try:
+    from module.runtime_tools import (
+        activate_bundled_interproscan_binaries,
+        resolve_helper_executable,
+        resolve_java_executable,
+    )
+except ImportError:
+    activate_bundled_interproscan_binaries = None
+    resolve_helper_executable = None
+    resolve_java_executable = None
 
 class DependencyChecker:
     """Dependency checker."""
@@ -91,8 +103,72 @@ class DependencyChecker:
     def check_external_tool(self, tool_name):
         return shutil.which(tool_name) is not None
 
+    def check_java_runtime(self):
+        """Validate that Java is invocable and meets the InterProScan minimum version."""
+        java_candidate = resolve_java_executable(self.script_dir) if resolve_java_executable else None
+        java_path = str(java_candidate) if java_candidate else shutil.which("java")
+        if not java_path:
+            return False, "Java runtime (required by InterProScan) was not found on PATH"
+
+        try:
+            result = subprocess.run(
+                [java_path, "-version"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+        except Exception as e:
+            return False, f"Java was found at {java_path}, but could not be executed: {e}"
+
+        if result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            if stderr:
+                return False, f"Java was found at {java_path}, but 'java -version' failed: {stderr}"
+            return False, f"Java was found at {java_path}, but 'java -version' failed"
+
+        version_output = (result.stderr or result.stdout or "").strip()
+        version_line = ""
+        for line in version_output.splitlines():
+            if "version" in line.lower():
+                version_line = line.strip()
+                break
+
+        if not version_line:
+            return False, f"Java was found at {java_path}, but its version could not be determined"
+
+        version_str = ""
+        if '"' in version_line:
+            try:
+                version_str = version_line.split('"')[1]
+            except Exception:
+                version_str = ""
+
+        major_version = None
+        if version_str:
+            try:
+                if version_str.startswith("1."):
+                    major_version = int(version_str.split(".")[1])
+                else:
+                    major_version = int(version_str.split(".")[0])
+            except Exception:
+                major_version = None
+
+        if major_version is None:
+            return False, f"Java was found at {java_path}, but its version could not be parsed: {version_line}"
+
+        if major_version < 11:
+            return False, f"Java {version_str} found at {java_path}, but InterProScan requires Java 11+"
+
+        return True, f"Java {version_str} available at {java_path}"
+
     def check_hmmscan(self):
         """Check whether hmmscan is available (bundled or system)."""
+        helper_hmmscan = None
+        if resolve_helper_executable is not None:
+            helper_hmmscan = resolve_helper_executable(self.script_dir, "hmmer3", "hmmscan")
+        if helper_hmmscan is not None:
+            return True, f"Using platform helper hmmscan: {helper_hmmscan}"
+
         # 0) If an external InterProScan path is provided, prioritize its bundled hmmscan
         if self.interproscan_path:
             interpro_dir = self.interproscan_path.parent
@@ -134,6 +210,57 @@ class DependencyChecker:
     def check_file_exists(self, file_path):
 
         return file_path.exists()
+
+    def _detect_binary_format(self, binary_path):
+        """Return a lightweight binary format label for the given file."""
+        try:
+            with open(binary_path, "rb") as f:
+                header = f.read(4)
+        except Exception:
+            return "unknown"
+
+        if header.startswith(b"#!"):
+            return "script"
+        if header == b"\x7fELF":
+            return "elf"
+        if header in (
+            b"\xfe\xed\xfa\xce",
+            b"\xfe\xed\xfa\xcf",
+            b"\xce\xfa\xed\xfe",
+            b"\xcf\xfa\xed\xfe",
+            b"\xca\xfe\xba\xbe",
+            b"\xbe\xba\xfe\xca",
+            b"\xca\xfe\xd0\x0d",
+            b"\x0d\xd0\xfe\xca",
+        ):
+            return "mach-o"
+        return "unknown"
+
+    def check_interproscan_native_binaries(self, interproscan_dir):
+        """Validate that bundled native binaries match the current platform."""
+        interproscan_dir = Path(interproscan_dir)
+        current_system = platform.system().lower()
+
+        candidates = [
+            interproscan_dir / "bin" / "hmmer" / "hmmer3" / "3.3" / "hmmsearch",
+            interproscan_dir / "bin" / "cdd" / "rpsblast",
+            interproscan_dir / "bin" / "prosite" / "pfscanV3",
+        ]
+
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+
+            fmt = self._detect_binary_format(candidate)
+            if fmt == "unknown":
+                continue
+
+            if current_system == "darwin" and fmt == "elf":
+                return False, f"InterProScan binary is Linux-only on this macOS host: {candidate}"
+            if current_system == "linux" and fmt == "mach-o":
+                return False, f"InterProScan binary is macOS-only on this Linux host: {candidate}"
+
+        return True, "InterProScan native binaries look compatible with the current platform"
     
     def check_interproscan_setup(self):
         # If an external InterProScan path is specified, validate that installation
@@ -151,6 +278,20 @@ class DependencyChecker:
             
             if not data_dir.exists():
                 self.warnings.append(f"InterProScan data directory does not exist: {data_dir}")
+                return False
+
+            if (
+                activate_bundled_interproscan_binaries is not None
+                and interproscan_dir.resolve() == (self.script_dir / "db" / "interproscan").resolve()
+            ):
+                activated, activation_msg = activate_bundled_interproscan_binaries(self.script_dir, interproscan_dir)
+                if not activated:
+                    self.warnings.append(activation_msg)
+                    return False
+
+            native_ok, native_msg = self.check_interproscan_native_binaries(interproscan_dir)
+            if not native_ok:
+                self.warnings.append(native_msg)
                 return False
                 
             return True
@@ -171,6 +312,17 @@ class DependencyChecker:
         
         if not data_dir.exists():
             self.warnings.append(f"InterProScan data directory does not exist: {data_dir}")
+            return False
+
+        if activate_bundled_interproscan_binaries is not None:
+            activated, activation_msg = activate_bundled_interproscan_binaries(self.script_dir, interproscan_dir)
+            if not activated:
+                self.warnings.append(activation_msg)
+                return False
+
+        native_ok, native_msg = self.check_interproscan_native_binaries(interproscan_dir)
+        if not native_ok:
+            self.warnings.append(native_msg)
             return False
         
         return True
@@ -365,6 +517,16 @@ class DependencyChecker:
             tools_to_check = [('python3', self.required_external_tools['python3'])]
 
         for tool, description in tools_to_check:
+            if tool == 'java':
+                ok, msg = self.check_java_runtime()
+                if ok:
+                    print(f"  [OK] {tool:<15} - {msg}")
+                else:
+                    print(f"  [ERROR] {tool:<15} - {msg}")
+                    self.missing_dependencies.append(f"External tool: {tool}")
+                    all_dependencies_met = False
+                continue
+
             if self.check_external_tool(tool):
                 print(f"  [OK] {tool:<15} - {description}")
             else:
