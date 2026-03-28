@@ -210,9 +210,16 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             # Use predicted TF sequence FASTA
             tf_fasta_file = project_output / "protein_model_preclassification" / f"{Path(fasta_file).stem}_tf_sequences.fasta"
             if not tf_fasta_file.exists():
-                print(f"Warning: predicted TF FASTA file not found: {tf_fasta_file}")
-                print("Falling back to the original input for analysis")
-                analysis_fasta = fasta_file
+                candidates = sorted((project_output / "protein_model_preclassification").glob("*_tf_sequences.fasta"))
+                if len(candidates) == 1:
+                    tf_fasta_file = candidates[0]
+                    print(f"Warning: predicted TF FASTA file not found: {project_output / 'protein_model_preclassification' / f'{Path(fasta_file).stem}_tf_sequences.fasta'}")
+                    print(f"Using detected TF FASTA instead: {tf_fasta_file}")
+                    analysis_fasta = str(tf_fasta_file)
+                else:
+                    print(f"Warning: predicted TF FASTA file not found: {tf_fasta_file}")
+                    print("Falling back to the original input for analysis")
+                    analysis_fasta = fasta_file
             else:
                 analysis_fasta = str(tf_fasta_file)
         else:
@@ -1080,7 +1087,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         abs_fasta = str(Path(fasta_file).absolute())
         abs_project_output = str(project_output.absolute())
         cmd = [
-            "python", str(PREDICT_SCRIPT),
+            sys.executable, str(PREDICT_SCRIPT),
             "--fasta", abs_fasta,
             "--threshold", str(threshold),
             "--output", str(output_file.absolute()),
@@ -1110,7 +1117,13 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print("1. Running TF prediction...")
         step_start_time = time.time()
         
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=SCRIPT_DIR,
+            env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+        )
         
         step_end_time = time.time()
         step_duration = step_end_time - step_start_time
@@ -1459,7 +1472,7 @@ def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False,
 # ============================================================================
 
 def validate_appl_list(appl_string):
-    valid_apps = {'CDD', 'PANTHER', 'Pfam', 'PROSITEPATTERNS', 'PROSITEPROFILES', 'SMART', 'TIGRFAM'}
+    valid_apps = {'CDD', 'NCBIfam', 'PANTHER', 'Pfam', 'PROSITEPATTERNS', 'PROSITEPROFILES', 'SMART'}
     
     if appl_string:
         apps = [app.strip() for app in appl_string.split(',')]
@@ -1561,8 +1574,8 @@ Example usage:
     
     # InterProScan applications
     parser.add_argument('--appl', type=validate_appl_list,
-                       default='CDD,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART,TIGRFAM',
-                       help='InterProScan application list (comma-separated). Allowed: CDD,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART,TIGRFAM (default: all)')
+                       default='CDD,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART',
+                       help='InterProScan application list (comma-separated). Allowed: CDD,NCBIfam,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART')
     
     # External InterProScan path
     parser.add_argument('--interproscan', help='Path to interproscan.sh (hmmscan will follow the specified InterProScan)')
@@ -1756,7 +1769,7 @@ Example usage:
 
                 if target_fasta:
                     cmd = [
-                        "python", str(PREDICT_SCRIPT),
+                        sys.executable, str(PREDICT_SCRIPT),
                         "--fasta", str(target_fasta),
                         "--threshold", str(args.threshold),
                         "--output", str(output_file),
@@ -1767,7 +1780,13 @@ Example usage:
                     if args.debug:
                         cmd.append("--debug")
                     print(f"Executing Grad-CAM command: {' '.join(cmd)}")
-                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        cwd=SCRIPT_DIR,
+                        env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+                    )
                     if result.returncode == 0:
                         print("Grad-CAM heatmaps generated successfully")
                     else:
@@ -1818,6 +1837,7 @@ Example usage:
                 print(f"\n[ERROR] Prediction dependency checks failed: {error_msg}")
                 print("\nPrediction requires:")
                 print("  - PyTorch")
+                print("  - matplotlib")
                 print("  - Model file (model.pth)")
                 print("  - Prediction script (predict.py)")
                 print("\nInstall PyTorch:")
@@ -1825,6 +1845,8 @@ Example usage:
                 print("  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu")
                 print("  # GPU (CUDA 11.8):")
                 print("  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
+                print("\nInstall plotting dependency:")
+                print("  pip install matplotlib")
                 print("  # More options: https://pytorch.org/get-started/locally/")
                 print("\nTip: If prediction is not needed, remove --predict to run analysis directly.")
                 sys.exit(1)

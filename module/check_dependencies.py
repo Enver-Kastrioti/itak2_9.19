@@ -56,7 +56,8 @@ class DependencyChecker:
         
         # Optional Python packages (needed for specific features)
         self.optional_python_packages = {
-            'torch': 'PyTorch (required only for prediction)'
+            'torch': 'PyTorch (required only for prediction)',
+            'matplotlib': 'matplotlib (required by prediction / Grad-CAM plotting)'
         }
         
         # Required external tools
@@ -370,9 +371,9 @@ class DependencyChecker:
     
     def check_prediction_dependencies(self):
 
-        # Check PyTorch
-        if not self.check_python_package('torch'):
-            return False, "Prediction requires PyTorch, but PyTorch is not installed"
+        for package in ('torch', 'matplotlib'):
+            if not self.check_python_package(package):
+                return False, f"Prediction requires {package}, but {package} is not installed"
         
         # Check prediction model file
         model_file = self.required_files.get('model.pth')
@@ -468,27 +469,21 @@ class DependencyChecker:
                 self.missing_dependencies.append(f"Python package: {package}")
                 all_dependencies_met = False
         
-        # Check optional Python packages (torch only when prediction is requested)
+        # Check optional Python packages used by prediction-related paths
         print("\nOptional Python packages:")
         for package, description in self.optional_python_packages.items():
-            # If prediction checks are disabled, skip torch
-            if package == 'torch' and not check_predict:
+            if not check_predict:
                 continue
-                
+
             if package == 'torch':
                 print("  [INFO] Checking PyTorch (this may take a few seconds)...")
             
             if self.check_python_package(package):
                 print(f"  [OK] {package:<15} - {description}")
             else:
-                # Missing torch is only relevant when prediction is requested
-                if check_predict and package == 'torch':
-                    print(f"  [WARN] {package:<15} - {description}")
-                    self.missing_optional_dependencies.append(f"Python package: {package}")
-                    print(f"      Note: missing {package} disables prediction")
-                else:
-                    print(f"  [WARN] {package:<15} - {description}")
-                    print(f"      Note: missing {package} does not affect core functionality")
+                print(f"  [WARN] {package:<15} - {description}")
+                self.missing_optional_dependencies.append(f"Python package: {package}")
+                print(f"      Note: missing {package} disables prediction")
 
         # Additional check: Biopython core features
         print("\nBiopython feature checks:")
@@ -611,6 +606,8 @@ class DependencyChecker:
                     print("      CPU: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu")
                     print("      GPU (CUDA): pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
                     print("      More options: https://pytorch.org/get-started/locally/")
+                elif pkg == 'matplotlib':
+                    print("    pip install matplotlib")
                 elif pkg == 'Bio':
                     print(f"    pip install biopython")
                 elif pkg in ['pandas', 'numpy']:

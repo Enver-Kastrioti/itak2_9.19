@@ -376,6 +376,7 @@ def main():
     helper_root = Path(args.bin_dir).resolve() if args.bin_dir else get_helper_root(ROOT_DIR)
     if helper_root is None:
         helper_root = interproscan_dir / "bin"
+    configured_bin_dir = interproscan_dir / "bin"
 
     data_dir = Path(args.data_dir).resolve() if args.data_dir else (interproscan_dir / "data").resolve()
     if not data_dir.exists():
@@ -400,7 +401,7 @@ def main():
     write_local_interproscan_config(
         config_template,
         local_config,
-        bin_dir=helper_root,
+        bin_dir=configured_bin_dir,
         data_dir=data_dir,
         python_cmd=runtime_python,
         perl_cmd=detect_perl(),
@@ -422,7 +423,8 @@ def main():
     print(f"Wrote iTAK wrapper: {itak_wrapper_path}")
     print(f"Runtime Python: {runtime_python}")
     print(f"Java: {java_bin}")
-    print(f"InterProScan bin directory: {helper_root}")
+    print(f"InterProScan bin directory: {configured_bin_dir}")
+    print(f"Helper binary source: {helper_root}")
     print(f"InterProScan data directory: {data_dir}")
     if args.with_predict:
         print(f"Prediction backend: {args.predict_backend}")

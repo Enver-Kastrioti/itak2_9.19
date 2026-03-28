@@ -102,6 +102,12 @@ Optional:
 # run a post-install smoke test
 ./install_runtime.sh --smoke-test
 
+# run the repository smoke test directly
+./smoke_test.sh
+
+# include the prediction workflow in the smoke test
+./smoke_test.sh --predict
+
 # install into the current Python without creating .venv
 ./install_runtime.sh --no-venv
 ```
