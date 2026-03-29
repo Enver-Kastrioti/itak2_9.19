@@ -119,6 +119,36 @@ class PipelineContext:
             return self.interproscan_dir / f"{Path(analysis_fasta).name}.json"
         return original_json
 
+
+class PipelineStageError(RuntimeError):
+    def __init__(self, stage, message):
+        super().__init__(f"[{stage}] {message}")
+        self.stage = stage
+        self.message = message
+
+
+def _run_command(cmd, stage, cwd=None, env=None):
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=env,
+        )
+    except FileNotFoundError as exc:
+        raise PipelineStageError(stage, f"Executable not found: {cmd[0]}") from exc
+    except OSError as exc:
+        raise PipelineStageError(stage, f"Failed to start command: {exc}") from exc
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        stdout = (result.stdout or "").strip()
+        details = stderr or stdout or f"exit code {result.returncode}"
+        raise PipelineStageError(stage, f"Command failed with exit code {result.returncode}: {details}")
+
+    return result
+
 def ensure_db_extracted():
     """
     Ensure the db directory is available.
@@ -153,32 +183,22 @@ def ensure_db_extracted():
 
 # Basic utility functions
 def call_module_function(module_name, function_name, *args, **kwargs):
-
     try:
-        # Build module path
         module_path = MODULE_DIR / f"{module_name}.py"
-        
         if not module_path.exists():
-            raise FileNotFoundError(f"Module file not found: {module_path}")
-        
-        # Dynamically import module
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(module_name, module_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        
-        # Resolve function
+            raise PipelineStageError(module_name, f"Module file not found: {module_path}")
+
+        module = _load_module_from_path(module_name, module_path)
         if not hasattr(module, function_name):
-            raise AttributeError(f"Function {function_name} not found in module {module_name}")
-        
+            raise PipelineStageError(module_name, f"Function not found: {function_name}")
+
         func = getattr(module, function_name)
-        
-        # Call function
         return func(*args, **kwargs)
-        
-    except Exception as e:
-        print(f"Error calling module function: {e}")
+    except PipelineStageError as e:
+        print(e)
         return None
+
+
 # Timer formatting
 def format_duration(seconds):
 
@@ -224,10 +244,17 @@ def setup_project_output(fasta_file, output=None):
 def _load_module_from_path(module_name, module_path):
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise PipelineStageError(module_name, f"Unable to create import spec for {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except PipelineStageError:
+        raise
+    except Exception as exc:
+        raise PipelineStageError(module_name, f"Failed to import {module_path}: {exc}") from exc
 
 
 def _load_get_fasta_module():
@@ -957,16 +984,12 @@ def _run_prediction_once(fasta_file, threshold, output_csv, project_output, pred
         supplementary_only=supplementary_only,
         supp_models=supp_models,
     )
-
-    result = subprocess.run(
+    result = _run_command(
         cmd,
-        capture_output=True,
-        text=True,
+        stage="TF prediction",
         cwd=SCRIPT_DIR,
         env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
     )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "Prediction failed")
     if result.stdout:
         print(result.stdout)
 
@@ -1076,16 +1099,12 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
 
 def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=None):
     try:
-        # Ensure db directory is available
         if not interproscan_path and not ensure_db_extracted():
-            print("Error: db directory is not available")
-            return False
-            
-        # Create InterProScan output directory
+            raise PipelineStageError("InterProScan", "db directory is not available")
+
         ipr_output_dir = Path(output_dir) / "InterproScan"
         ipr_output_dir.mkdir(exist_ok=True)
-        
-        # Build InterProScan command
+
         if interproscan_path:
              interproscan_script = str(interproscan_path)
         else:
@@ -1098,12 +1117,14 @@ def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=N
             activated, activation_msg = activate_bundled_interproscan_binaries(SCRIPT_DIR)
             print(activation_msg)
             if not activated:
-                return False
+                raise PipelineStageError("InterProScan", activation_msg)
 
         java_executable = resolve_java_executable(SCRIPT_DIR) if resolve_java_executable else None
         if java_executable is None:
-            print("Error: Java runtime not found. Install Java 11+ or place a JDK under .local-jdk/")
-            return False
+            raise PipelineStageError(
+                "InterProScan",
+                "Java runtime not found. Install Java 11+ or place a JDK under .local-jdk/",
+            )
              
         cmd = [interproscan_script, '-i', fasta_file, '-f', 'json', '-d', str(ipr_output_dir)]
         
@@ -1111,104 +1132,78 @@ def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=N
             cmd.extend(['-appl', appl_list])
         
         print(f"Running command: {' '.join(cmd)}")
-        
-        # Execute
-        result = subprocess.run(
+        _run_command(
             cmd,
-            capture_output=True,
-            text=True,
+            stage="InterProScan",
+            cwd=SCRIPT_DIR,
             env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
         )
-        
-        if result.returncode == 0:
-            print("InterProScan completed")
-            return True
-        else:
-            print(f"InterProScan failed: {result.stderr}")
-            return False
-            
-    except Exception as e:
-        print(f"Error while running InterProScan: {e}")
+        print("InterProScan completed")
+        return True
+    except PipelineStageError as e:
+        print(e)
         return False
 
 # Run hmmscan
 def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
-    # Ensure db directory is available
-    if not interproscan_path and not ensure_db_extracted():
-        print("Error: db directory is not available")
-        return False
-        
-    # Set hmmscan-related paths
-    hmm_db = SCRIPT_DIR / "hmm" / "self_build.hmm"
-    
-    if not hmm_db.exists():
-        print(f"Error: HMM database file not found: {hmm_db}")
-        return False
-    
-    if not Path(fasta_file).exists():
-        print(f"Error: FASTA file not found: {fasta_file}")
-        return False
-    
-    # Prefer bundled hmmscan (db/interproscan/bin/hmmer/hmmer3/hmmscan)
-    
-    hmmscan_executable = None
+    try:
+        if not interproscan_path and not ensure_db_extracted():
+            raise PipelineStageError("hmmscan", "db directory is not available")
 
-    if resolve_helper_executable is not None:
-        helper_hmmscan = resolve_helper_executable(SCRIPT_DIR, "hmmer3", "hmmscan")
-        if helper_hmmscan is not None:
-            hmmscan_executable = str(helper_hmmscan)
-            print(f"Using platform helper hmmscan: {hmmscan_executable}")
-    
-    if interproscan_path:
-        # Try hmmscan bundled with a user-specified InterProScan
-        interpro_dir = Path(interproscan_path).parent
-        candidates = []
-        candidates.append(interpro_dir / "bin" / "hmmer" / "hmmer3" / "hmmscan")
-        candidates.append(interpro_dir / "bin" / "hmmer" / "hmmscan")
-        candidates.append(interpro_dir / "bin" / "hmmscan")
-        hmmer3_dir = interpro_dir / "bin" / "hmmer" / "hmmer3"
-        if hmmer3_dir.exists():
-            for p in hmmer3_dir.rglob("hmmscan"):
-                candidates.append(p)
-        bin_dir = interpro_dir / "bin"
-        if bin_dir.exists():
-            for p in bin_dir.rglob("hmmscan"):
-                candidates.append(p)
+        hmm_db = SCRIPT_DIR / "hmm" / "self_build.hmm"
+        if not hmm_db.exists():
+            raise PipelineStageError("hmmscan", f"HMM database file not found: {hmm_db}")
 
-        for c in candidates:
-            try:
-                if c.exists() and os.access(c, os.X_OK) and c.is_file():
-                    hmmscan_executable = str(c)
+        if not Path(fasta_file).exists():
+            raise PipelineStageError("hmmscan", f"FASTA file not found: {fasta_file}")
+
+        hmmscan_executable = None
+        if resolve_helper_executable is not None:
+            helper_hmmscan = resolve_helper_executable(SCRIPT_DIR, "hmmer3", "hmmscan")
+            if helper_hmmscan is not None:
+                hmmscan_executable = str(helper_hmmscan)
+                print(f"Using platform helper hmmscan: {hmmscan_executable}")
+
+        if interproscan_path:
+            interpro_dir = Path(interproscan_path).parent
+            candidates = [
+                interpro_dir / "bin" / "hmmer" / "hmmer3" / "hmmscan",
+                interpro_dir / "bin" / "hmmer" / "hmmscan",
+                interpro_dir / "bin" / "hmmscan",
+            ]
+            hmmer3_dir = interpro_dir / "bin" / "hmmer" / "hmmer3"
+            if hmmer3_dir.exists():
+                candidates.extend(hmmer3_dir.rglob("hmmscan"))
+            bin_dir = interpro_dir / "bin"
+            if bin_dir.exists():
+                candidates.extend(bin_dir.rglob("hmmscan"))
+
+            for candidate in candidates:
+                if candidate.exists() and os.access(candidate, os.X_OK) and candidate.is_file():
+                    hmmscan_executable = str(candidate)
                     print(f"Using bundled hmmscan from custom InterProScan: {hmmscan_executable}")
                     break
-            except Exception:
-                pass
-        # If not found, prefer system hmmscan if available
-        if not hmmscan_executable and shutil.which("hmmscan"):
-            hmmscan_executable = "hmmscan"
-            print("Using system hmmscan")
-            
-    if not hmmscan_executable:
-        internal_hmmscan = DB_DIR / "interproscan" / "bin" / "hmmer" / "hmmer3" / "hmmscan"
-        if internal_hmmscan.exists() and os.access(internal_hmmscan, os.X_OK):
-            hmmscan_executable = str(internal_hmmscan)
-            print(f"Using bundled hmmscan: {hmmscan_executable}")
-        else:
-            hmmscan_executable = "hmmscan"
-            if shutil.which("hmmscan") is None:
-                print("Error: hmmscan executable not found (neither bundled nor on system PATH)")
-                return False
-            print(f"Using system hmmscan: {hmmscan_executable}")
+            if not hmmscan_executable and shutil.which("hmmscan"):
+                hmmscan_executable = "hmmscan"
+                print("Using system hmmscan")
 
-    try:
-        # Create hmmscan output directory
+        if not hmmscan_executable:
+            internal_hmmscan = DB_DIR / "interproscan" / "bin" / "hmmer" / "hmmer3" / "hmmscan"
+            if internal_hmmscan.exists() and os.access(internal_hmmscan, os.X_OK):
+                hmmscan_executable = str(internal_hmmscan)
+                print(f"Using bundled hmmscan: {hmmscan_executable}")
+            else:
+                hmmscan_executable = "hmmscan"
+                if shutil.which("hmmscan") is None:
+                    raise PipelineStageError(
+                        "hmmscan",
+                        "executable not found (neither bundled nor on system PATH)",
+                    )
+                print(f"Using system hmmscan: {hmmscan_executable}")
+
         hmmscan_output_dir = Path(output_dir) / "hmmscan"
         hmmscan_output_dir.mkdir(exist_ok=True)
-        
-        # Set output file path
         output_file = hmmscan_output_dir / "result.tbl"
-        
-        # Build hmmscan command
         cmd = [
             hmmscan_executable,
             "--tblout", str(output_file),
@@ -1218,13 +1213,10 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
         ]
         
         print(f"Running hmmscan command: {' '.join(cmd)}")
-        
-        # Execute hmmscan
-        result = subprocess.run(
+        _run_command(
             cmd,
-            capture_output=True,
-            text=True,
-            check=True,
+            stage="hmmscan",
+            cwd=SCRIPT_DIR,
             env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
         )
         
@@ -1232,13 +1224,8 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
         print(f"Results saved to: {output_file}")
         
         return True
-        
-    except subprocess.CalledProcessError as e:
-        print(f"hmmscan failed: {e}")
-        print(f"Error output: {e.stderr}")
-        return False
-    except Exception as e:
-        print(f"Error while running hmmscan: {e}")
+    except PipelineStageError as e:
+        print(e)
         return False
 
 
@@ -1273,18 +1260,13 @@ def run_tf_prediction_step(
 
     print(f"Executing command: {' '.join(cmd)}")
     step_start_time = time.time()
-    result = subprocess.run(
+    result = _run_command(
         cmd,
-        capture_output=True,
-        text=True,
+        stage="TF prediction",
         cwd=SCRIPT_DIR,
         env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
     )
     step_duration = time.time() - step_start_time
-
-    if result.returncode != 0:
-        print(f"Prediction failed: {result.stderr}")
-        return False
 
     print(f"Prediction completed (elapsed: {format_duration(step_duration)})")
     if result.stdout:
@@ -1643,6 +1625,9 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print()
         return True
         
+    except PipelineStageError as e:
+        print(e)
+        return False
     except Exception as e:
         print(f"Error during prediction workflow: {e}")
         return False
@@ -1702,6 +1687,9 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print()
         return True
         
+    except PipelineStageError as e:
+        print(e)
+        return False
     except Exception as e:
         print(f"Error during analysis workflow: {e}")
         return False
@@ -1780,6 +1768,9 @@ def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False,
             print(f"{'='*50}")
             return False
         
+    except PipelineStageError as e:
+        print(e)
+        return False
     except Exception as e:
         print(f"Error during test-mode execution: {e}")
         return False
