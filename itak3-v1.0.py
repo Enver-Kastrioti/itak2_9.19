@@ -764,7 +764,7 @@ def _get_or_create_processed_fasta(fasta_file, output_dir):
         return str(fasta_file)
 
 
-def _run_protein_kinase_analysis(fasta_file, project_output, enabled=True):
+def _run_protein_kinase_analysis(fasta_file, project_output, enabled=True, debug=False):
     if not enabled:
         print("Protein kinase analysis skipped (--skip-pk)")
         return True
@@ -774,6 +774,7 @@ def _run_protein_kinase_analysis(fasta_file, project_output, enabled=True):
         "run_protein_kinase_pipeline",
         str(fasta_file),
         str(project_output),
+        debug=debug,
     )
     if not isinstance(result, dict) or not result.get("success"):
         print("Protein kinase analysis failed")
@@ -1296,6 +1297,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             processed_fasta,
             project_output,
             enabled=run_protein_kinase_analysis,
+            debug=debug,
         )
         step_end_time = time.time()
         step_duration = step_end_time - step_start_time
@@ -1449,6 +1451,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             processed_fasta,
             project_output,
             enabled=run_protein_kinase_analysis,
+            debug=debug,
         )
 
         step_end_time = time.time()

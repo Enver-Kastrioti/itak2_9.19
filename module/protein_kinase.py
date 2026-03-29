@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import json
 import re
 import shutil
 import subprocess
@@ -189,7 +190,7 @@ def _write_selected_fasta(source_fasta, selected_ids, output_fasta):
     return count
 
 
-def _write_pk_outputs(output_dir, source_fasta, pkinase_id, plantsp_cat, shiu_cat, pk_desc):
+def _write_pk_outputs(output_dir, source_fasta, pkinase_id, plantsp_cat, shiu_cat, pk_desc, debug=False):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -198,11 +199,14 @@ def _write_pk_outputs(output_dir, source_fasta, pkinase_id, plantsp_cat, shiu_ca
     combined_tsv = output_dir / "pk_classification.tsv"
     shiu_tsv = output_dir / "shiu_classification.txt"
     ppc_tsv = output_dir / "PPC_classification.txt"
+    match_json = output_dir / "match.json"
 
     sequences = {}
     with open(source_fasta, "r", encoding="utf-8") as handle:
         for record in SeqIO.parse(handle, "fasta"):
             sequences[record.id] = str(record.seq)
+
+    json_result = {}
 
     with open(pk_fasta, "w", encoding="utf-8") as fasta_handle, \
          open(match_tbl, "w", encoding="utf-8") as match_handle, \
@@ -220,6 +224,17 @@ def _write_pk_outputs(output_dir, source_fasta, pkinase_id, plantsp_cat, shiu_ca
             combined_handle.write(f"{seq_id}\t{shiu_class}\t{ppc_class}\t{ppc_desc}\n")
             shiu_handle.write(f"{seq_id}\t{shiu_class}\n")
             ppc_handle.write(f"{seq_id}\t{ppc_class}\t{ppc_desc}\n")
+            json_result[seq_id] = {
+                "name": ppc_class,
+                "family": ppc_class,
+                "type": "PK",
+                "desc": [ppc_desc] if ppc_desc != "NA" else [],
+                "other_family": f"Shiu:{shiu_class}",
+            }
+
+    if debug:
+        with open(match_json, "w", encoding="utf-8") as handle:
+            json.dump(json_result, handle, indent=2, ensure_ascii=False)
 
 
 def _ensure_pk_database():
@@ -239,7 +254,7 @@ def _ensure_pk_database():
         )
 
 
-def run_protein_kinase_pipeline(fasta_file, project_output, cpu=None):
+def run_protein_kinase_pipeline(fasta_file, project_output, cpu=None, debug=False):
     _ensure_pk_database()
     hmmscan_bin = _resolve_hmmscan_executable()
     cpu = cpu or min(4, os.cpu_count() or 1)
@@ -265,6 +280,8 @@ def run_protein_kinase_pipeline(fasta_file, project_output, cpu=None):
             "Sequence_ID\tShiu_Class\tPPC_Class\tPPC_Description\n",
             encoding="utf-8",
         )
+        if debug:
+            (pk_output_dir / "match.json").write_text("{}\n", encoding="utf-8")
         return {
             "success": True,
             "count": 0,
@@ -296,7 +313,7 @@ def run_protein_kinase_pipeline(fasta_file, project_output, cpu=None):
             if hit.score >= cutoff:
                 plantsp_cat[hit.query_name] = refined_cat
 
-    _write_pk_outputs(pk_output_dir, fasta_file, pkinase_id, plantsp_cat, shiu_cat, pk_desc)
+    _write_pk_outputs(pk_output_dir, fasta_file, pkinase_id, plantsp_cat, shiu_cat, pk_desc, debug=debug)
 
     return {
         "success": True,
