@@ -121,6 +121,35 @@ if [[ "$SUITE" == "full" ]]; then
     --require-pk 2 \
     --output "$OUTPUT_ROOT/predict_pk_positive"
 
+  run_step "Predict PK Positive Without TF" \
+    "$ROOT_DIR/run_itak3_local.sh" \
+    --predict \
+    -t 0.3 \
+    -i "$ROOT_DIR/test_pk_no_tf_candidate.fasta" \
+    --appl "$APPL_LIST" \
+    -o "$OUTPUT_ROOT/predict_pk_no_tf"
+
+  check_file "$OUTPUT_ROOT/predict_pk_no_tf/result/match_tbl.txt"
+  check_file "$OUTPUT_ROOT/predict_pk_no_tf/result/all_match_tbl.txt"
+  check_file "$OUTPUT_ROOT/predict_pk_no_tf/protein_kinase/pk_classification.tsv"
+
+  if [[ -s "$OUTPUT_ROOT/predict_pk_no_tf/result/match_tbl.txt" ]]; then
+    echo "Expected empty TF/TR match table for no-TF prediction case" >&2
+    exit 1
+  fi
+
+  no_tf_pk_count="$(tail -n +2 "$OUTPUT_ROOT/predict_pk_no_tf/protein_kinase/pk_classification.tsv" | awk 'NF{count++} END{print count+0}')"
+  if [[ "$no_tf_pk_count" -lt 1 ]]; then
+    echo "Expected at least 1 protein kinase classification in no-TF prediction case" >&2
+    exit 1
+  fi
+
+  no_tf_summary_count="$(tail -n +2 "$OUTPUT_ROOT/predict_pk_no_tf/result/all_match_tbl.txt" | awk 'NF{count++} END{print count+0}')"
+  if [[ "$no_tf_summary_count" -lt 1 ]]; then
+    echo "Expected combined summary rows for no-TF prediction case" >&2
+    exit 1
+  fi
+
   run_step "Debug PK Positive" \
     "$ROOT_DIR/run_itak3_local.sh" \
     -i "$ROOT_DIR/test_protein_kinase.fasta" \

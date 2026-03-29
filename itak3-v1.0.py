@@ -1335,7 +1335,7 @@ def extract_predicted_tf_sequences_step(context, processed_fasta, threshold, ste
     step_duration = time.time() - step_start_time
 
     if tf_fasta is None:
-        print("Sequence extraction failed")
+        print("No TF sequences met the prediction threshold")
         return None
 
     print(f"TF sequences saved to: {tf_fasta} (elapsed: {format_duration(step_duration)})")
@@ -1464,6 +1464,41 @@ def run_tf_tr_analysis_pipeline(
 
     return True
 
+
+def write_empty_tf_tr_outputs_step(context, debug=False, step_number=None):
+    print(f"{_format_step_heading(step_number, 'Writing empty TF/TR outputs')}...")
+
+    step_start_time = time.time()
+    context.preclass_dir.mkdir(exist_ok=True)
+    context.result_dir.mkdir(exist_ok=True)
+
+    if not context.tf_fasta.exists():
+        context.tf_fasta.write_text("", encoding="utf-8")
+
+    match_tbl_path = context.result_dir / "match_tbl.txt"
+    match_tbl_path.write_text("", encoding="utf-8")
+
+    classified_fasta_path = context.result_dir / f"{context.tf_fasta.stem}_tf_classified.fasta"
+    classified_fasta_path.write_text("", encoding="utf-8")
+
+    if debug:
+        match_json_path = context.result_dir / "match.json"
+        with open(match_json_path, "w", encoding="utf-8") as handle:
+            json.dump({}, handle, indent=2, ensure_ascii=False)
+
+    _write_combined_result_summary(context.project_output)
+    step_duration = time.time() - step_start_time
+
+    print("No TF sequences met the prediction threshold; wrote empty TF/TR outputs")
+    print(f"TF FASTA: {context.tf_fasta}")
+    print(f"Classification table: {match_tbl_path}")
+    print(f"Classified FASTA: {classified_fasta_path}")
+    if debug:
+        print(f"Classification JSON: {context.result_dir / 'match.json'}")
+    print(f"Empty TF/TR finalization completed (elapsed: {format_duration(step_duration)})")
+
+    return True
+
 # ============================================================================
 # Main functional entry points
 # ============================================================================
@@ -1517,8 +1552,6 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                 threshold=threshold,
                 step_number=2,
             )
-            if tf_fasta is None:
-                return False
         
         pk_success = run_protein_kinase_step(
             context,
@@ -1529,6 +1562,18 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         )
         if not pk_success:
             return False
+
+        if tf_fasta is None:
+            if not write_empty_tf_tr_outputs_step(context, debug=debug, step_number=4):
+                return False
+
+            predict_end_time = time.time()
+            total_predict_duration = predict_end_time - predict_start_time
+
+            print("\n=== TF Prediction Completed ===")
+            print(f"Total runtime: {format_duration(total_predict_duration)}")
+            print()
+            return True
 
         if tf_fasta:
             analysis_success = run_tf_tr_analysis_pipeline(
