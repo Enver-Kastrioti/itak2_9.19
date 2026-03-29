@@ -69,7 +69,8 @@ itak3/
 ├── rule.txt
 ├── output/
 ├── temp/
-└── test_protein.fasta
+├── test_protein.fasta
+└── test_protein_kinase.fasta
 ```
 
 Installation
@@ -239,6 +240,9 @@ Examples
 
 10. Skip protein kinase analysis:
    python itak3-v1.0.py -i test_protein.fasta --skip-pk
+
+11. Run a positive protein kinase example:
+   python itak3-v1.0.py -i test_protein_kinase.fasta --skip-deps-check
 
 Outputs
 --------
