@@ -194,6 +194,7 @@ def _write_pk_outputs(output_dir, source_fasta, pkinase_id, plantsp_cat, shiu_ca
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pk_fasta = output_dir / "pk_sequence.fasta"
+    match_tbl = output_dir / "match_tbl.txt"
     combined_tsv = output_dir / "pk_classification.tsv"
     shiu_tsv = output_dir / "shiu_classification.txt"
     ppc_tsv = output_dir / "PPC_classification.txt"
@@ -204,6 +205,7 @@ def _write_pk_outputs(output_dir, source_fasta, pkinase_id, plantsp_cat, shiu_ca
             sequences[record.id] = str(record.seq)
 
     with open(pk_fasta, "w", encoding="utf-8") as fasta_handle, \
+         open(match_tbl, "w", encoding="utf-8") as match_handle, \
          open(combined_tsv, "w", encoding="utf-8") as combined_handle, \
          open(shiu_tsv, "w", encoding="utf-8") as shiu_handle, \
          open(ppc_tsv, "w", encoding="utf-8") as ppc_handle:
@@ -213,7 +215,8 @@ def _write_pk_outputs(output_dir, source_fasta, pkinase_id, plantsp_cat, shiu_ca
             ppc_class = plantsp_cat.get(seq_id, "PPC:5.2.1")
             ppc_desc = pk_desc.get(ppc_class, "NA")
             sequence = sequences.get(seq_id, "")
-            fasta_handle.write(f">{seq_id} PPC:{ppc_class};Shiu:{shiu_class}\n{sequence}\n")
+            fasta_handle.write(f">{seq_id} | {ppc_class} | PK\n{sequence}\n")
+            match_handle.write(f"{seq_id}\t{ppc_class}\t{ppc_class}\tPK\t{ppc_desc}\tShiu:{shiu_class}\n")
             combined_handle.write(f"{seq_id}\t{shiu_class}\t{ppc_class}\t{ppc_desc}\n")
             shiu_handle.write(f"{seq_id}\t{shiu_class}\n")
             ppc_handle.write(f"{seq_id}\t{ppc_class}\t{ppc_desc}\n")
@@ -256,8 +259,12 @@ def run_protein_kinase_pipeline(fasta_file, project_output, cpu=None):
 
     if not pkinase_id:
         pk_output_dir.mkdir(parents=True, exist_ok=True)
-        for file_name in ("pk_sequence.fasta", "pk_classification.tsv", "shiu_classification.txt", "PPC_classification.txt"):
-            (pk_output_dir / file_name).write_text("" if file_name != "pk_classification.tsv" else "Sequence_ID\tShiu_Class\tPPC_Class\tPPC_Description\n", encoding="utf-8")
+        for file_name in ("pk_sequence.fasta", "match_tbl.txt", "shiu_classification.txt", "PPC_classification.txt"):
+            (pk_output_dir / file_name).write_text("", encoding="utf-8")
+        (pk_output_dir / "pk_classification.tsv").write_text(
+            "Sequence_ID\tShiu_Class\tPPC_Class\tPPC_Description\n",
+            encoding="utf-8",
+        )
         return {
             "success": True,
             "count": 0,

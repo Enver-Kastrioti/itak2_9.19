@@ -271,6 +271,7 @@ The program creates the following files and directories under the output directo
 ├── hmmscan/                               # hmmscan output directory
 │   └── result.tbl
 ├── protein_kinase/                        # Protein kinase outputs (default direct/predict modes)
+│   ├── match_tbl.txt                      # PK classification table in the same 6-column style as TF/TR match_tbl.txt
 │   ├── pk_sequence.fasta
 │   ├── pk_classification.tsv
 │   ├── shiu_classification.txt
