@@ -24,6 +24,7 @@ Examples:
   ./smoke_test.sh
   ./smoke_test.sh --predict
   ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
+  ./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
   ./smoke_test.sh --appl CDD,Pfam,SMART
 EOF
 }
@@ -106,8 +107,8 @@ check_file "$OUTPUT_DIR/protein_kinase/pk_sequence.fasta"
 check_file "$OUTPUT_DIR/protein_kinase/shiu_classification.txt"
 check_file "$OUTPUT_DIR/protein_kinase/PPC_classification.txt"
 
+pk_count="$(tail -n +2 "$OUTPUT_DIR/protein_kinase/pk_classification.tsv" | awk 'NF{count++} END{print count+0}')"
 if [[ -n "$REQUIRE_PK_COUNT" ]]; then
-  pk_count="$(tail -n +2 "$OUTPUT_DIR/protein_kinase/pk_classification.tsv" | awk 'NF{count++} END{print count+0}')"
   if [[ "$pk_count" -lt "$REQUIRE_PK_COUNT" ]]; then
     echo "Expected at least $REQUIRE_PK_COUNT protein kinase classifications, found $pk_count" >&2
     exit 1
@@ -123,3 +124,4 @@ echo "Smoke test passed."
 echo "Output directory: $OUTPUT_DIR"
 echo "InterProScan JSON: $json_file"
 echo "Classification table: $OUTPUT_DIR/result/match_tbl.txt"
+echo "Protein kinase classifications: $pk_count"

@@ -115,6 +115,9 @@ Optional:
 # run a positive PK smoke test
 ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
 
+# run the prediction workflow with a positive PK sample
+./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
+
 # install into the current Python without creating .venv
 ./install_runtime.sh --no-venv
 ```
@@ -249,6 +252,9 @@ Examples
 
 12. Run a positive protein kinase smoke test:
    ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
+
+13. Run prediction mode with a positive protein kinase sample:
+   ./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
 
 Outputs
 --------
