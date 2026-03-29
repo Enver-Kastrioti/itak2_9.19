@@ -36,6 +36,24 @@ except ImportError:
     resolve_helper_executable = None
     resolve_java_executable = None
 
+try:
+    from module.output_contracts import (
+        build_tftr_match_record,
+        load_pk_records_from_tsv,
+        load_tftr_records_from_table,
+        records_to_classification_result,
+        write_combined_summary,
+        write_tftr_outputs,
+    )
+except ImportError:
+    print("Warning: Unable to import output contract helpers; normalized output handling will be limited")
+    build_tftr_match_record = None
+    load_pk_records_from_tsv = None
+    load_tftr_records_from_table = None
+    records_to_classification_result = None
+    write_combined_summary = None
+    write_tftr_outputs = None
+
 # Import FASTA validation module
 try:
     from module.validate_fasta import FastaValidator
@@ -326,93 +344,32 @@ def _build_prediction_command(
     return cmd
 
 
-def _load_tf_tr_match_table(match_tbl_path):
-    records = {}
-    match_tbl_path = Path(match_tbl_path)
-    if not match_tbl_path.exists():
-        return records
-
-    with open(match_tbl_path, "r", encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.rstrip("\n")
-            if not line:
-                continue
-            parts = line.split("\t")
-            if len(parts) < 6:
-                continue
-            seq_id, name, family, type_, desc, other_family = parts[:6]
-            records[seq_id] = {
-                "tftr_name": name,
-                "tftr_family": family,
-                "tftr_type": type_,
-                "tftr_desc": desc,
-                "tftr_other_family": other_family,
-            }
-    return records
-
-
-def _load_pk_match_table(pk_tbl_path):
-    records = {}
-    pk_tbl_path = Path(pk_tbl_path)
-    if not pk_tbl_path.exists():
-        return records
-
-    with open(pk_tbl_path, "r", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        for row in reader:
-            seq_id = row.get("Sequence_ID")
-            if not seq_id:
-                continue
-            records[seq_id] = {
-                "pk_shiu_class": row.get("Shiu_Class", "NA") or "NA",
-                "pk_ppc_class": row.get("PPC_Class", "NA") or "NA",
-                "pk_ppc_description": row.get("PPC_Description", "NA") or "NA",
-            }
-    return records
-
-
-def _write_combined_result_summary(project_output):
+def _write_combined_result_summary(project_output, tf_records=None, pk_records=None):
     project_output = Path(project_output)
     result_dir = project_output / "result"
     result_dir.mkdir(exist_ok=True)
 
-    tf_tr_records = _load_tf_tr_match_table(result_dir / "match_tbl.txt")
-    pk_records = _load_pk_match_table(project_output / "protein_kinase" / "pk_classification.tsv")
-    all_ids = sorted(set(tf_tr_records.keys()) | set(pk_records.keys()))
-
     summary_path = result_dir / "all_match_tbl.txt"
-    with open(summary_path, "w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle, delimiter="\t")
-        writer.writerow([
-            "Sequence_ID",
-            "TFTR_Name",
-            "TFTR_Family",
-            "TFTR_Type",
-            "TFTR_Description",
-            "TFTR_Other_Family",
-            "PK_Shiu_Class",
-            "PK_PPC_Class",
-            "PK_PPC_Description",
-        ])
-        for seq_id in all_ids:
-            tf_tr = tf_tr_records.get(seq_id, {})
-            pk = pk_records.get(seq_id, {})
-            writer.writerow([
-                seq_id,
-                tf_tr.get("tftr_name", "NA"),
-                tf_tr.get("tftr_family", "NA"),
-                tf_tr.get("tftr_type", "NA"),
-                tf_tr.get("tftr_desc", "NA"),
-                tf_tr.get("tftr_other_family", "NA"),
-                pk.get("pk_shiu_class", "NA"),
-                pk.get("pk_ppc_class", "NA"),
-                pk.get("pk_ppc_description", "NA"),
-            ])
+    if tf_records is None:
+        if load_tftr_records_from_table is not None:
+            tf_records = load_tftr_records_from_table(result_dir / "match_tbl.txt")
+        else:
+            tf_records = {}
+    if pk_records is None:
+        if load_pk_records_from_tsv is not None:
+            pk_records = load_pk_records_from_tsv(project_output / "protein_kinase" / "pk_classification.tsv")
+        else:
+            pk_records = {}
+
+    if write_combined_summary is not None:
+        write_combined_summary(tf_records, pk_records, summary_path)
+    else:
+        summary_path.write_text("", encoding="utf-8")
 
     print(
         "Combined result summary written: "
-        f"{summary_path} ({len(all_ids)} sequences; "
-        f"{len(tf_tr_records)} TF/TR, {len(pk_records)} PK)"
+        f"{summary_path} ({len(set(tf_records.keys()) | set(pk_records.keys()))} sequences; "
+        f"{len(tf_records)} TF/TR, {len(pk_records)} PK)"
     )
     return True
 
@@ -553,7 +510,7 @@ def run_analysis_modules(context, use_predicted=True, debug=False, score_thresho
         
         # Step 3: run classification (supports in-memory data passing)
         print("\nStep 3: running classification...")
-        class_tf_success = run_class_tf_module(
+        class_tf_result = run_class_tf_module(
             str(analysis_path),
             str(rule_file), 
             result_dir, 
@@ -562,11 +519,17 @@ def run_analysis_modules(context, use_predicted=True, debug=False, score_thresho
             spec_data=spec_data,
             classification_mode=classification_mode
         )
+        if isinstance(class_tf_result, tuple):
+            class_tf_success, tf_records = class_tf_result
+        else:
+            class_tf_success = class_tf_result
+            tf_records = {}
+
         if not class_tf_success:
             print("classification failed")
             return False
 
-        _write_combined_result_summary(context.project_output)
+        _write_combined_result_summary(context.project_output, tf_records=tf_records)
         
         print(f"\n{'='*50}")
         print("All analysis modules completed")
@@ -723,26 +686,46 @@ def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered
             )
             
             if classification_result is not None:
-                # Write table output
-                tbl_path = os.path.join(result_dir, 'match_tbl.txt')
-                with open(tbl_path, 'w', encoding='utf-8') as f:
+                normalized_records = {}
+                if build_tftr_match_record is not None:
                     for gene_id, data in classification_result.items():
-                        desc_str = ';'.join(data['desc']) if data['desc'] else 'NA'
-                        line = f"{gene_id}\t{data['name']}\t{data['family']}\t{data['type']}\t{desc_str}\t{data['other_family']}\n"
-                        f.write(line)
-                
+                        normalized_records[gene_id] = build_tftr_match_record(gene_id, data)
+                else:
+                    normalized_records = classification_result
+
+                if write_tftr_outputs is not None and records_to_classification_result is not None:
+                    written_outputs = write_tftr_outputs(normalized_records, result_dir, debug=debug)
+                    tbl_path = written_outputs["table"]
+                    json_path = written_outputs.get("json")
+                else:
+                    tbl_path = os.path.join(result_dir, 'match_tbl.txt')
+                    with open(tbl_path, 'w', encoding='utf-8') as f:
+                        for gene_id, data in classification_result.items():
+                            desc_str = ';'.join(data['desc']) if data['desc'] else 'NA'
+                            line = f"{gene_id}\t{data['name']}\t{data['family']}\t{data['type']}\t{desc_str}\t{data['other_family']}\n"
+                            f.write(line)
+                    json_path = os.path.join(result_dir, 'match.json') if debug else None
+                    if debug:
+                        with open(json_path, 'w', encoding='utf-8') as f:
+                            json.dump(classification_result, f, indent=2, ensure_ascii=False)
+
                 # Generate classified FASTA
                 try:
-                    # Dynamically import get_fasta
                     get_fasta_path = MODULE_DIR / "get_fasta.py"
                     spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
                     get_fasta = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(get_fasta)
-                    
-                    if classification_result:
+
+                    classified_result = (
+                        records_to_classification_result(normalized_records)
+                        if records_to_classification_result is not None and build_tftr_match_record is not None
+                        else classification_result
+                    )
+
+                    if classified_result:
                         classified_fasta_path = get_fasta.generate_classified_fasta(
-                            fasta_file, 
-                            classification_result, 
+                            fasta_file,
+                            classified_result,
                             output_dir=result_dir
                         )
                         if classified_fasta_path:
@@ -754,12 +737,7 @@ def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered
                 except Exception as e:
                     print(f"Error while generating classified FASTA: {e}")
                 
-                # Write match.json only in debug mode
                 if debug:
-                    json_path = os.path.join(result_dir, 'match.json')
-                    with open(json_path, 'w', encoding='utf-8') as f:
-                        json.dump(classification_result, f, indent=2, ensure_ascii=False)
-                    
                     print("classification completed (in-memory)")
                     print("Results saved to:")
                     print(f"  JSON: {json_path}")
@@ -769,18 +747,18 @@ def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered
                     print("Results saved to:")
                     print(f"  Table: {tbl_path}")
                 
-                return True
+                return True, normalized_records if build_tftr_match_record is not None else classification_result
             else:
                 print("classification processing failed")
-                return False
+                return False, {}
                 
         except Exception as e:
             print(f"Error while running classification: {e}")
-            return False
+            return False, {}
             
     except Exception as e:
         print(f"Error while running classification: {e}")
-        return False
+        return False, {}
 
 # ============================================================================
 # TF sequence extraction
@@ -1475,13 +1453,17 @@ def write_empty_tf_tr_outputs_step(context, debug=False, step_number=None):
     if not context.tf_fasta.exists():
         context.tf_fasta.write_text("", encoding="utf-8")
 
-    match_tbl_path = context.result_dir / "match_tbl.txt"
-    match_tbl_path.write_text("", encoding="utf-8")
+    if write_tftr_outputs is not None:
+        written_outputs = write_tftr_outputs({}, context.result_dir, debug=debug)
+        match_tbl_path = written_outputs["table"]
+    else:
+        match_tbl_path = context.result_dir / "match_tbl.txt"
+        match_tbl_path.write_text("", encoding="utf-8")
 
     classified_fasta_path = context.result_dir / f"{context.tf_fasta.stem}_tf_classified.fasta"
     classified_fasta_path.write_text("", encoding="utf-8")
 
-    if debug:
+    if debug and write_tftr_outputs is None:
         match_json_path = context.result_dir / "match.json"
         with open(match_json_path, "w", encoding="utf-8") as handle:
             json.dump({}, handle, indent=2, ensure_ascii=False)

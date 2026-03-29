@@ -97,6 +97,7 @@ run_step "Syntax Check" python -m py_compile \
   "$ROOT_DIR/itak3-v1.0.py" \
   "$ROOT_DIR/module/check_dependencies.py" \
   "$ROOT_DIR/module/protein_kinase.py" \
+  "$ROOT_DIR/module/output_contracts.py" \
   "$ROOT_DIR/module/runtime_tools.py"
 
 run_step "Direct Baseline" \
