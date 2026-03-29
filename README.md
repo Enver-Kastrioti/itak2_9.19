@@ -273,6 +273,7 @@ The program creates the following files and directories under the output directo
 ├── protein_kinase/                        # Protein kinase outputs (default direct/predict modes)
 │   ├── match_tbl.txt                      # PK classification table in the same 6-column style as TF/TR match_tbl.txt
 │   ├── match.json                         # Debug output (--debug): PK classification JSON in the same schema as TF/TR match.json
+│   ├── <name>_pk_classified.fasta         # Classified PK sequences in the same header style as TF classified FASTA
 │   ├── pk_sequence.fasta
 │   ├── pk_classification.tsv
 │   ├── shiu_classification.txt
