@@ -112,6 +112,9 @@ Optional:
 # include the prediction workflow in the smoke test
 ./smoke_test.sh --predict
 
+# run a positive PK smoke test
+./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
+
 # install into the current Python without creating .venv
 ./install_runtime.sh --no-venv
 ```
@@ -243,6 +246,9 @@ Examples
 
 11. Run a positive protein kinase example:
    python itak3-v1.0.py -i test_protein_kinase.fasta --skip-deps-check
+
+12. Run a positive protein kinase smoke test:
+   ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
 
 Outputs
 --------

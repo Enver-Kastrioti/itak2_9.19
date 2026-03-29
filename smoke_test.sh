@@ -6,6 +6,7 @@ INPUT_FASTA="$ROOT_DIR/test_protein.fasta"
 OUTPUT_DIR="$ROOT_DIR/output/smoke_test"
 APPL_LIST="PROSITEPROFILES"
 RUN_PREDICT=0
+REQUIRE_PK_COUNT=""
 
 usage() {
   cat <<'EOF'
@@ -16,11 +17,13 @@ Options:
   --input PATH        Input FASTA file (default: test_protein.fasta)
   --output PATH       Output directory (default: output/smoke_test)
   --appl LIST         InterProScan applications (default: PROSITEPROFILES)
+  --require-pk N      Require at least N protein kinase classifications
   --help              Show this help message
 
 Examples:
   ./smoke_test.sh
   ./smoke_test.sh --predict
+  ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
   ./smoke_test.sh --appl CDD,Pfam,SMART
 EOF
 }
@@ -41,6 +44,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --appl)
       APPL_LIST="$2"
+      shift 2
+      ;;
+    --require-pk)
+      REQUIRE_PK_COUNT="$2"
       shift 2
       ;;
     --help|-h)
@@ -97,6 +104,14 @@ check_file "$OUTPUT_DIR/protein_kinase/pk_classification.tsv"
 check_file "$OUTPUT_DIR/protein_kinase/pk_sequence.fasta"
 check_file "$OUTPUT_DIR/protein_kinase/shiu_classification.txt"
 check_file "$OUTPUT_DIR/protein_kinase/PPC_classification.txt"
+
+if [[ -n "$REQUIRE_PK_COUNT" ]]; then
+  pk_count="$(tail -n +2 "$OUTPUT_DIR/protein_kinase/pk_classification.tsv" | awk 'NF{count++} END{print count+0}')"
+  if [[ "$pk_count" -lt "$REQUIRE_PK_COUNT" ]]; then
+    echo "Expected at least $REQUIRE_PK_COUNT protein kinase classifications, found $pk_count" >&2
+    exit 1
+  fi
+fi
 
 if [[ "$RUN_PREDICT" -eq 1 ]]; then
   check_file "$OUTPUT_DIR/protein_model_preclassification/$(basename "${INPUT_FASTA%.*}")_prediction.csv"
