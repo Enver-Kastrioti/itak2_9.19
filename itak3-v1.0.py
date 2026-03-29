@@ -271,6 +271,61 @@ def build_pipeline_context(fasta_file, output=None, project_output=None):
     )
 
 
+def _format_step_heading(step_number, label):
+    if step_number is None:
+        return f"\n{label}"
+    return f"\n{step_number}. {label}"
+
+
+def _build_prediction_command(
+    fasta_file,
+    threshold,
+    output_csv,
+    project_output,
+    predict_mode="fast",
+    debug=False,
+    use_supplementary=False,
+    supplementary_only=False,
+    supp_models=None,
+    grad_cam_mode="none",
+):
+    if not PREDICT_SCRIPT.exists():
+        raise FileNotFoundError(f"Prediction script not found: {PREDICT_SCRIPT}")
+
+    cmd = [
+        sys.executable,
+        str(PREDICT_SCRIPT),
+        "--fasta",
+        str(Path(fasta_file).absolute()),
+        "--threshold",
+        str(threshold),
+        "--output",
+        str(Path(output_csv).absolute()),
+        "--project-output",
+        str(Path(project_output).absolute()),
+        "--mode",
+        predict_mode,
+    ]
+
+    if supplementary_only:
+        cmd.append("--supplementary-only")
+    elif use_supplementary:
+        cmd.append("--use-supplementary")
+
+    if supp_models:
+        cmd.append("--supp-models")
+        for model_name in supp_models:
+            cmd.append(model_name)
+
+    if grad_cam_mode != "none":
+        cmd.extend(["--grad-cam-mode", grad_cam_mode])
+
+    if debug:
+        cmd.append("--debug")
+
+    return cmd
+
+
 def _load_tf_tr_match_table(match_tbl_path):
     records = {}
     match_tbl_path = Path(match_tbl_path)
@@ -913,32 +968,25 @@ def _unique_output_dir(path):
         counter += 1
 
 def _run_prediction_once(fasta_file, threshold, output_csv, project_output, predict_mode="fast", debug=False, use_supplementary=False, supplementary_only=False, supp_models=None):
-    if not PREDICT_SCRIPT.exists():
-        raise FileNotFoundError(f"Prediction script not found: {PREDICT_SCRIPT}")
-    abs_fasta = str(Path(fasta_file).absolute())
-    abs_project_output = str(Path(project_output).absolute())
-    output_csv = str(Path(output_csv).absolute())
+    cmd = _build_prediction_command(
+        fasta_file=fasta_file,
+        threshold=threshold,
+        output_csv=output_csv,
+        project_output=project_output,
+        predict_mode=predict_mode,
+        debug=debug,
+        use_supplementary=use_supplementary,
+        supplementary_only=supplementary_only,
+        supp_models=supp_models,
+    )
 
-    cmd = [
-        "python", str(PREDICT_SCRIPT),
-        "--fasta", abs_fasta,
-        "--threshold", str(threshold),
-        "--output", output_csv,
-        "--project-output", abs_project_output,
-        "--mode", predict_mode,
-    ]
-    if supplementary_only:
-        cmd.append("--supplementary-only")
-    elif use_supplementary:
-        cmd.append("--use-supplementary")
-    if supp_models:
-        cmd.append("--supp-models")
-        for m in supp_models:
-            cmd.append(m)
-    if debug:
-        cmd.append("--debug")
-
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=SCRIPT_DIR,
+        env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "Prediction failed")
     if result.stdout:
@@ -984,7 +1032,8 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
         supp_models=supp_models,
     )
 
-    processed_fasta = _get_or_create_processed_fasta(fasta_file, cache_output)
+    cache_context = build_pipeline_context(fasta_file, project_output=cache_output)
+    processed_fasta = str(preprocess_input_sequences(cache_context))
     rows = _load_prediction_rows(base_prediction_csv)
 
     for t in thresholds:
@@ -1027,28 +1076,20 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
             tbl_path.write_text("", encoding="utf-8")
             continue
 
-        print("\n3. Running InterProScan...")
-        interproscan_success = run_interproscan(str(tf_fasta_path), str(project_output), appl_list, interproscan_path)
-        if not interproscan_success:
-            print("InterProScan failed")
-            return False
-
-        print("\n4. Running hmmscan...")
-        hmmscan_success = run_hmmscan(str(tf_fasta_path), str(project_output), interproscan_path)
-        if not hmmscan_success:
-            print("hmmscan failed")
-            return False
-
-        print("\n5. Running classification analysis...")
-        analysis_success = run_analysis_modules(
+        analysis_success = run_tf_tr_analysis_pipeline(
             context,
+            analysis_fasta=tf_fasta_path,
             use_predicted=True,
+            appl_list=appl_list,
             debug=debug,
             score_threshold=score_threshold,
             classification_mode=classification_mode,
+            interproscan_path=interproscan_path,
+            run_interproscan_analysis=True,
+            run_hmmscan_analysis=True,
+            step_numbers=(3, 4, 5),
         )
         if not analysis_success:
-            print("Analysis modules failed")
             return False
 
     return True
@@ -1222,6 +1263,207 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
         print(f"Error while running hmmscan: {e}")
         return False
 
+
+def preprocess_input_sequences(context):
+    return _ensure_processed_fasta(context)
+
+
+def run_tf_prediction_step(
+    context,
+    threshold,
+    predict_mode="fast",
+    debug=False,
+    use_supplementary=False,
+    supplementary_only=False,
+    supp_models=None,
+    step_number=1,
+):
+    print(f"{_format_step_heading(step_number, 'Running TF prediction')}...")
+
+    context.preclass_dir.mkdir(exist_ok=True)
+    cmd = _build_prediction_command(
+        fasta_file=context.input_fasta,
+        threshold=threshold,
+        output_csv=context.prediction_csv,
+        project_output=context.project_output,
+        predict_mode=predict_mode,
+        debug=debug,
+        use_supplementary=use_supplementary,
+        supplementary_only=supplementary_only,
+        supp_models=supp_models,
+    )
+
+    print(f"Executing command: {' '.join(cmd)}")
+    step_start_time = time.time()
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=SCRIPT_DIR,
+        env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+    )
+    step_duration = time.time() - step_start_time
+
+    if result.returncode != 0:
+        print(f"Prediction failed: {result.stderr}")
+        return False
+
+    print(f"Prediction completed (elapsed: {format_duration(step_duration)})")
+    if result.stdout:
+        print(result.stdout)
+
+    return context.prediction_csv
+
+
+def extract_predicted_tf_sequences_step(context, processed_fasta, threshold, step_number=2):
+    print(f"{_format_step_heading(step_number, 'Extracting predicted TF sequences')}...")
+
+    context.preclass_dir.mkdir(exist_ok=True)
+    prediction_file = context.prediction_csv
+    if not prediction_file.exists():
+        print(f"Warning: prediction result file not found: {prediction_file}")
+        return None
+
+    print(f"Using prediction result file: {prediction_file}")
+    step_start_time = time.time()
+    tf_fasta = extract_tf_sequences_from_csv(
+        str(processed_fasta),
+        str(prediction_file),
+        str(context.preclass_dir),
+        threshold,
+    )
+    step_duration = time.time() - step_start_time
+
+    if tf_fasta is None:
+        print("Sequence extraction failed")
+        return None
+
+    print(f"TF sequences saved to: {tf_fasta} (elapsed: {format_duration(step_duration)})")
+    return Path(tf_fasta)
+
+
+def run_protein_kinase_step(context, fasta_file, enabled=True, debug=False, step_number=None):
+    print(f"{_format_step_heading(step_number, 'Running protein kinase analysis')}...")
+
+    step_start_time = time.time()
+    success = _run_protein_kinase_analysis(
+        fasta_file,
+        context.project_output,
+        enabled=enabled,
+        debug=debug,
+    )
+    step_duration = time.time() - step_start_time
+
+    if success:
+        print(f"Protein kinase step completed (elapsed: {format_duration(step_duration)})")
+
+    return success
+
+
+def run_interproscan_step(context, fasta_file, appl_list=None, interproscan_path=None, step_number=None):
+    print(f"{_format_step_heading(step_number, 'Running InterProScan')}...")
+
+    step_start_time = time.time()
+    success = run_interproscan(str(fasta_file), str(context.project_output), appl_list, interproscan_path)
+    step_duration = time.time() - step_start_time
+
+    if success:
+        print(f"InterProScan completed (elapsed: {format_duration(step_duration)})")
+    else:
+        print("InterProScan failed")
+
+    return success
+
+
+def run_hmmscan_step(context, fasta_file, interproscan_path=None, step_number=None):
+    print(f"{_format_step_heading(step_number, 'Running hmmscan')}...")
+
+    step_start_time = time.time()
+    success = run_hmmscan(str(fasta_file), str(context.project_output), interproscan_path)
+    step_duration = time.time() - step_start_time
+
+    if success:
+        print(f"hmmscan completed (elapsed: {format_duration(step_duration)})")
+    else:
+        print("hmmscan failed")
+
+    return success
+
+
+def run_tf_classification_step(
+    context,
+    use_predicted=True,
+    debug=False,
+    score_threshold=1.0,
+    classification_mode="specific",
+    step_number=None,
+):
+    print(f"{_format_step_heading(step_number, 'Running classification analysis')}...")
+
+    step_start_time = time.time()
+    success = run_analysis_modules(
+        context,
+        use_predicted=use_predicted,
+        debug=debug,
+        score_threshold=score_threshold,
+        classification_mode=classification_mode,
+    )
+    step_duration = time.time() - step_start_time
+
+    if success:
+        print(f"Analysis modules completed (elapsed: {format_duration(step_duration)})")
+    else:
+        print("Analysis modules failed")
+
+    return success
+
+
+def run_tf_tr_analysis_pipeline(
+    context,
+    analysis_fasta,
+    use_predicted,
+    appl_list=None,
+    debug=False,
+    score_threshold=1.0,
+    classification_mode="specific",
+    interproscan_path=None,
+    run_interproscan_analysis=True,
+    run_hmmscan_analysis=True,
+    step_numbers=(None, None, None),
+):
+    interproscan_step, hmmscan_step, classification_step = step_numbers
+
+    if run_interproscan_analysis:
+        if not run_interproscan_step(
+            context,
+            analysis_fasta,
+            appl_list=appl_list,
+            interproscan_path=interproscan_path,
+            step_number=interproscan_step,
+        ):
+            return False
+
+    if run_hmmscan_analysis:
+        if not run_hmmscan_step(
+            context,
+            analysis_fasta,
+            interproscan_path=interproscan_path,
+            step_number=hmmscan_step,
+        ):
+            return False
+
+    if run_interproscan_analysis and run_hmmscan_analysis:
+        return run_tf_classification_step(
+            context,
+            use_predicted=use_predicted,
+            debug=debug,
+            score_threshold=score_threshold,
+            classification_mode=classification_mode,
+            step_number=classification_step,
+        )
+
+    return True
+
 # ============================================================================
 # Main functional entry points
 # ============================================================================
@@ -1253,170 +1495,59 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         if grad_cam_mode != 'none':
             print(f"Grad-CAM: enabled (mode: {grad_cam_mode})")
 
-        processed_fasta = _ensure_processed_fasta(context)
-        
-        # Build prediction command
-        if not PREDICT_SCRIPT.exists():
-            print(f"Error: prediction script not found: {PREDICT_SCRIPT}")
-            return False
-        
-        # Output filename
-        fasta_basename = Path(fasta_file).stem
-        
-        # Create preclassification output directory
-        preclass_dir = context.preclass_dir
-        preclass_dir.mkdir(exist_ok=True)
-        
-        output_file = context.prediction_csv
-        
-        abs_fasta = str(Path(fasta_file).absolute())
-        abs_project_output = str(project_output.absolute())
-        cmd = [
-            sys.executable, str(PREDICT_SCRIPT),
-            "--fasta", abs_fasta,
-            "--threshold", str(threshold),
-            "--output", str(output_file.absolute()),
-            "--project-output", abs_project_output,
-            "--mode", predict_mode
-        ]
-        if supplementary_only:
-            cmd.append("--supplementary-only")
-        elif use_supplementary:
-            cmd.append("--use-supplementary")
-        if supp_models:
-            cmd.append("--supp-models")
-            for m in supp_models:
-                cmd.append(m)
-        
-        # Add Grad-CAM parameters
-        # if grad_cam_mode != 'none':
-        #    cmd.extend(["--grad-cam-mode", grad_cam_mode])
-        
-        # Add debug parameter
-        if debug:
-            cmd.append("--debug")
-        
-        print(f"Executing command: {' '.join(cmd)}")
-        
-        # Run prediction
-        print("1. Running TF prediction...")
-        step_start_time = time.time()
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=SCRIPT_DIR,
-            env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+        processed_fasta = preprocess_input_sequences(context)
+        prediction_csv = run_tf_prediction_step(
+            context,
+            threshold=threshold,
+            predict_mode=predict_mode,
+            debug=debug,
+            use_supplementary=use_supplementary,
+            supplementary_only=supplementary_only,
+            supp_models=supp_models,
+            step_number=1,
         )
-        
-        step_end_time = time.time()
-        step_duration = step_end_time - step_start_time
-        
-        if result.returncode != 0:
-            print(f"Prediction failed: {result.stderr}")
+        if not prediction_csv:
             return False
-        
-        print(f"Prediction completed (elapsed: {format_duration(step_duration)})")
-        
-        # Print prediction-script output (may include sequence split statistics)
-        if result.stdout:
-            print(result.stdout)
-        
-        # Extract predicted TF sequences
+
         tf_fasta = None
         if extract_sequences:
-            print("\n2. Extracting predicted TF sequences...")
-            step_start_time = time.time()
-            
-            # Create FASTA output directory
-            fasta_output_dir = context.preclass_dir
-            fasta_output_dir.mkdir(exist_ok=True)
-            
-            prediction_file = output_file
-            if not prediction_file.exists():
-                print(f"Warning: prediction result file not found: {prediction_file}")
-                return False
-            
-            print(f"Using prediction result file: {prediction_file}")
-            tf_fasta = extract_tf_sequences_from_csv(str(processed_fasta), str(prediction_file), str(fasta_output_dir), threshold)
-            
+            tf_fasta = extract_predicted_tf_sequences_step(
+                context,
+                processed_fasta=processed_fasta,
+                threshold=threshold,
+                step_number=2,
+            )
             if tf_fasta is None:
-                print("Sequence extraction failed")
                 return False
-            
-            step_end_time = time.time()
-            step_duration = step_end_time - step_start_time
-            print(f"TF sequences saved to: {tf_fasta} (elapsed: {format_duration(step_duration)})")
         
-        interproscan_success = not run_interproscan_analysis
-        hmmscan_success = not run_hmmscan_analysis
-        analysis_success = False
-
-        print("\n3. Running protein kinase analysis...")
-        step_start_time = time.time()
-        pk_success = _run_protein_kinase_analysis(
+        pk_success = run_protein_kinase_step(
+            context,
             processed_fasta,
-            project_output,
             enabled=run_protein_kinase_analysis,
             debug=debug,
+            step_number=3,
         )
-        step_end_time = time.time()
-        step_duration = step_end_time - step_start_time
-        if pk_success:
-            print(f"Protein kinase step completed (elapsed: {format_duration(step_duration)})")
-        else:
+        if not pk_success:
             return False
 
-        # Run InterProScan
-        if run_interproscan_analysis and tf_fasta:
-            print("\n4. Running InterProScan...")
-            step_start_time = time.time()
-            
-            interproscan_success = run_interproscan(tf_fasta, str(project_output), appl_list, interproscan_path)
-            
-            step_end_time = time.time()
-            step_duration = step_end_time - step_start_time
-            
-            if interproscan_success:
-                print(f"InterProScan completed (elapsed: {format_duration(step_duration)})")
-            else:
-                print("InterProScan failed")
-                return False
-
-        # Run hmmscan
-        if run_hmmscan_analysis and tf_fasta:
-            print("\n5. Running hmmscan...")
-            step_start_time = time.time()
-            
-            hmmscan_success = run_hmmscan(tf_fasta, str(project_output), interproscan_path)
-            
-            step_end_time = time.time()
-            step_duration = step_end_time - step_start_time
-            
-            if hmmscan_success:
-                print(f"hmmscan completed (elapsed: {format_duration(step_duration)})")
-            else:
-                print("hmmscan failed")
-                return False
-
-        # Run classification analysis modules
-        if run_interproscan_analysis and run_hmmscan_analysis and tf_fasta:
-            print("\n6. Running classification analysis...")
-            step_start_time = time.time()
-            
-            analysis_success = run_analysis_modules(context, use_predicted=True, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
-            
-            step_end_time = time.time()
-            step_duration = step_end_time - step_start_time
-            
-            if analysis_success:
-                print(f"Analysis modules completed (elapsed: {format_duration(step_duration)})")
-            else:
-                print("Analysis modules failed")
+        if tf_fasta:
+            analysis_success = run_tf_tr_analysis_pipeline(
+                context,
+                analysis_fasta=tf_fasta,
+                use_predicted=True,
+                appl_list=appl_list,
+                debug=debug,
+                score_threshold=score_threshold,
+                classification_mode=classification_mode,
+                interproscan_path=interproscan_path,
+                run_interproscan_analysis=run_interproscan_analysis,
+                run_hmmscan_analysis=run_hmmscan_analysis,
+                step_numbers=(4, 5, 6),
+            )
+            if not analysis_success:
                 return False
         
-        # 6. Generate Grad-CAM heatmaps
+        # 7. Generate Grad-CAM heatmaps
         if grad_cam_mode != 'none':
             print(f"\n7. Generating Grad-CAM heatmaps (mode: {grad_cam_mode})...")
             step_start_time = time.time()
@@ -1439,23 +1570,28 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             
             if target_fasta:
                 # Temporary output file for Grad-CAM pass
-                temp_pred_csv = preclass_dir / f"{input_stem}_gradcam_prediction.csv"
-                
-                grad_cam_cmd = [
-                    "python", str(PREDICT_SCRIPT),
-                    "--fasta", str(target_fasta),
-                    "--threshold", str(threshold),
-                    "--output", str(temp_pred_csv),
-                    "--project-output", str(project_output),
-                    "--mode", predict_mode,
-                    "--grad-cam-mode", grad_cam_mode
-                ]
-                
-                if debug:
-                    grad_cam_cmd.append("--debug")
+                temp_pred_csv = context.preclass_dir / f"{input_stem}_gradcam_prediction.csv"
+                grad_cam_cmd = _build_prediction_command(
+                    fasta_file=target_fasta,
+                    threshold=threshold,
+                    output_csv=temp_pred_csv,
+                    project_output=project_output,
+                    predict_mode=predict_mode,
+                    debug=debug,
+                    use_supplementary=use_supplementary,
+                    supplementary_only=supplementary_only,
+                    supp_models=supp_models,
+                    grad_cam_mode=grad_cam_mode,
+                )
                 
                 print("Executing Grad-CAM generation...")
-                gc_result = subprocess.run(grad_cam_cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
+                gc_result = subprocess.run(
+                    grad_cam_cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=SCRIPT_DIR,
+                    env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+                )
                 
                 step_end_time = time.time()
                 step_duration = step_end_time - step_start_time
@@ -1502,75 +1638,32 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print(f"Input file: {fasta_file}")
         print(f"Output directory: {project_output}")
         
-        processed_fasta = _ensure_processed_fasta(context)
-        interproscan_success = False
-        hmmscan_success = False
-        analysis_success = False
+        processed_fasta = preprocess_input_sequences(context)
 
-        print("\n1. Running protein kinase analysis...")
-        step_start_time = time.time()
-
-        pk_success = _run_protein_kinase_analysis(
+        pk_success = run_protein_kinase_step(
+            context,
             processed_fasta,
-            project_output,
             enabled=run_protein_kinase_analysis,
             debug=debug,
+            step_number=1,
         )
-
-        step_end_time = time.time()
-        step_duration = step_end_time - step_start_time
-
-        if pk_success:
-            print(f"Protein kinase step completed (elapsed: {format_duration(step_duration)})")
-        else:
+        if not pk_success:
             return False
 
-        # Run InterProScan
-        print("\n2. Running InterProScan...")
-        step_start_time = time.time()
-        
-        interproscan_success = run_interproscan(str(processed_fasta), str(project_output), appl_list, interproscan_path)
-        
-        step_end_time = time.time()
-        step_duration = step_end_time - step_start_time
-        
-        if interproscan_success:
-            print(f"InterProScan completed (elapsed: {format_duration(step_duration)})")
-        else:
-            print("InterProScan failed")
-            return False
-
-        # Run hmmscan
-        print("\n3. Running hmmscan...")
-        step_start_time = time.time()
-        
-        hmmscan_success = run_hmmscan(str(processed_fasta), str(project_output), interproscan_path)
-        
-        step_end_time = time.time()
-        step_duration = step_end_time - step_start_time
-        
-        if hmmscan_success:
-            print(f"hmmscan completed (elapsed: {format_duration(step_duration)})")
-        else:
-            print("hmmscan failed")
-            return False
-
-        # Run classification
-        if interproscan_success and hmmscan_success:
-            print("\n4. Running classification analysis...")
-            step_start_time = time.time()
-            
-            analysis_success = run_analysis_modules(context, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
-            
-            step_end_time = time.time()
-            step_duration = step_end_time - step_start_time
-            
-            if analysis_success:
-                print(f"Analysis modules completed (elapsed: {format_duration(step_duration)})")
-            else:
-                print("Analysis modules failed")
-                return False
-        else:
+        analysis_success = run_tf_tr_analysis_pipeline(
+            context,
+            analysis_fasta=processed_fasta,
+            use_predicted=False,
+            appl_list=appl_list,
+            debug=debug,
+            score_threshold=score_threshold,
+            classification_mode=classification_mode,
+            interproscan_path=interproscan_path,
+            run_interproscan_analysis=True,
+            run_hmmscan_analysis=True,
+            step_numbers=(2, 3, 4),
+        )
+        if not analysis_success:
             return False
         
         # Total time
