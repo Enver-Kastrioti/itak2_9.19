@@ -272,6 +272,7 @@ The program creates the following files and directories under the output directo
 ├── getrule.json                           # Debug output (--debug): parsed classification rules
 └── result/                                # Classification results
     ├── match_tbl.txt                      # Final TF family classification results (table)
+    ├── all_match_tbl.txt                  # Combined TF/TR + protein kinase summary table
     ├── <name>_tf_classified.fasta         # Classified TF sequences
     ├── match.json                         # Debug output (--debug)
     ├── processed_ipr_domains.json         # Domain architecture JSON (sequence ↔ domain hits; optional)

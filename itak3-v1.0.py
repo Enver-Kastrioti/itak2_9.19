@@ -153,6 +153,97 @@ def setup_project_output(fasta_file, output=None):
     project_output.mkdir(parents=True, exist_ok=True)
     return project_output
 
+
+def _load_tf_tr_match_table(match_tbl_path):
+    records = {}
+    match_tbl_path = Path(match_tbl_path)
+    if not match_tbl_path.exists():
+        return records
+
+    with open(match_tbl_path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 6:
+                continue
+            seq_id, name, family, type_, desc, other_family = parts[:6]
+            records[seq_id] = {
+                "tftr_name": name,
+                "tftr_family": family,
+                "tftr_type": type_,
+                "tftr_desc": desc,
+                "tftr_other_family": other_family,
+            }
+    return records
+
+
+def _load_pk_match_table(pk_tbl_path):
+    records = {}
+    pk_tbl_path = Path(pk_tbl_path)
+    if not pk_tbl_path.exists():
+        return records
+
+    with open(pk_tbl_path, "r", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            seq_id = row.get("Sequence_ID")
+            if not seq_id:
+                continue
+            records[seq_id] = {
+                "pk_shiu_class": row.get("Shiu_Class", "NA") or "NA",
+                "pk_ppc_class": row.get("PPC_Class", "NA") or "NA",
+                "pk_ppc_description": row.get("PPC_Description", "NA") or "NA",
+            }
+    return records
+
+
+def _write_combined_result_summary(project_output):
+    project_output = Path(project_output)
+    result_dir = project_output / "result"
+    result_dir.mkdir(exist_ok=True)
+
+    tf_tr_records = _load_tf_tr_match_table(result_dir / "match_tbl.txt")
+    pk_records = _load_pk_match_table(project_output / "protein_kinase" / "pk_classification.tsv")
+    all_ids = sorted(set(tf_tr_records.keys()) | set(pk_records.keys()))
+
+    summary_path = result_dir / "all_match_tbl.txt"
+    with open(summary_path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t")
+        writer.writerow([
+            "Sequence_ID",
+            "TFTR_Name",
+            "TFTR_Family",
+            "TFTR_Type",
+            "TFTR_Description",
+            "TFTR_Other_Family",
+            "PK_Shiu_Class",
+            "PK_PPC_Class",
+            "PK_PPC_Description",
+        ])
+        for seq_id in all_ids:
+            tf_tr = tf_tr_records.get(seq_id, {})
+            pk = pk_records.get(seq_id, {})
+            writer.writerow([
+                seq_id,
+                tf_tr.get("tftr_name", "NA"),
+                tf_tr.get("tftr_family", "NA"),
+                tf_tr.get("tftr_type", "NA"),
+                tf_tr.get("tftr_desc", "NA"),
+                tf_tr.get("tftr_other_family", "NA"),
+                pk.get("pk_shiu_class", "NA"),
+                pk.get("pk_ppc_class", "NA"),
+                pk.get("pk_ppc_description", "NA"),
+            ])
+
+    print(
+        "Combined result summary written: "
+        f"{summary_path} ({len(all_ids)} sequences; "
+        f"{len(tf_tr_records)} TF/TR, {len(pk_records)} PK)"
+    )
+    return True
+
 def cleanup_processed_fasta(project_output, fasta_file):
     try:
         import importlib.util
@@ -348,6 +439,8 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
         if not class_tf_success:
             print("classification failed")
             return False
+
+        _write_combined_result_summary(project_output)
         
         print(f"\n{'='*50}")
         print("All analysis modules completed")
