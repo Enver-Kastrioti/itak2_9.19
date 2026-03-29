@@ -972,6 +972,45 @@ def _unique_output_dir(path):
             return candidate
         counter += 1
 
+
+def _copy_if_exists(source_path, target_path):
+    source_path = Path(source_path)
+    target_path = Path(target_path)
+    if not source_path.exists():
+        return False
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+    return True
+
+
+def _copy_directory_contents(source_dir, target_dir):
+    source_dir = Path(source_dir)
+    target_dir = Path(target_dir)
+    if not source_dir.exists():
+        return False
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for item in source_dir.iterdir():
+        destination = target_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, destination, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, destination)
+    return True
+
+
+def _seed_list_predict_context(context, processed_fasta):
+    _copy_if_exists(processed_fasta, context.processed_fasta)
+
+
+def _copy_cached_pk_outputs(cache_context, child_context, enabled):
+    if not enabled:
+        return True
+    copied = _copy_directory_contents(cache_context.protein_kinase_dir, child_context.protein_kinase_dir)
+    if not copied:
+        print(f"Warning: cached protein kinase outputs not found: {cache_context.protein_kinase_dir}")
+        return False
+    return True
+
 def _run_prediction_once(fasta_file, threshold, output_csv, project_output, predict_mode="fast", debug=False, use_supplementary=False, supplementary_only=False, supp_models=None):
     cmd = _build_prediction_command(
         fasta_file=fasta_file,
@@ -1018,8 +1057,6 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
     print(f"Input file: {fasta_file}")
     print(f"Output root: {output_base}")
     print(f"Thresholds: {['NO_PREDICT' if t is None else int(t*100) for t in thresholds]}")
-    if run_protein_kinase_analysis:
-        print("Note: protein kinase analysis is currently skipped in --list-predict mode")
 
     _run_prediction_once(
         fasta_file=fasta_file,
@@ -1034,22 +1071,43 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
     )
 
     cache_context = build_pipeline_context(fasta_file, project_output=cache_output)
-    processed_fasta = str(preprocess_input_sequences(cache_context))
+    processed_fasta = preprocess_input_sequences(cache_context)
+
+    if run_protein_kinase_analysis:
+        print("\n=== Shared protein kinase analysis ===")
+        pk_success = run_protein_kinase_step(
+            cache_context,
+            processed_fasta,
+            enabled=True,
+            debug=debug,
+            step_number=None,
+        )
+        if not pk_success:
+            return False
+
     rows = _load_prediction_rows(base_prediction_csv)
 
     for t in thresholds:
         if t is None:
             child_output = outputs[None]
             print(f"\n=== Output: {child_output.name} ===")
-            success = analyze_sequences_directly(
-                fasta_file=fasta_file,
-                output=str(child_output),
+            context = build_pipeline_context(fasta_file, project_output=child_output)
+            _seed_list_predict_context(context, processed_fasta)
+            if not _copy_cached_pk_outputs(cache_context, context, run_protein_kinase_analysis):
+                return False
+
+            success = run_tf_tr_analysis_pipeline(
+                context,
+                analysis_fasta=context.processed_fasta,
+                use_predicted=False,
                 appl_list=appl_list,
                 debug=debug,
                 score_threshold=score_threshold,
                 classification_mode=classification_mode,
                 interproscan_path=interproscan_path,
-                run_protein_kinase_analysis=False,
+                run_interproscan_analysis=True,
+                run_hmmscan_analysis=True,
+                step_numbers=(1, 2, 3),
             )
             if not success:
                 return False
@@ -1058,6 +1116,9 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
         child_output = outputs[t]
         print(f"\n=== Output: {child_output.name} (threshold={t}) ===")
         context = build_pipeline_context(fasta_file, project_output=child_output)
+        _seed_list_predict_context(context, processed_fasta)
+        if not _copy_cached_pk_outputs(cache_context, context, run_protein_kinase_analysis):
+            return False
         project_output = context.project_output
         preclass_dir = context.preclass_dir
         preclass_dir.mkdir(exist_ok=True)
@@ -1067,14 +1128,13 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
         _write_threshold_prediction_files(rows, prediction_csv, tf_only_csv, t)
 
         tf_headers = [r["Header"] for r in rows if float(r["TF_Probability"]) >= t]
-        tf_fasta_path = preclass_dir / f"{fasta_basename}_tf_sequences.fasta"
-        extracted = _extract_sequences_by_headers(processed_fasta, tf_headers, tf_fasta_path)
+        tf_fasta_path = context.tf_fasta
+        extracted = _extract_sequences_by_headers(str(processed_fasta), tf_headers, tf_fasta_path)
         print(f"Extracted TF sequences: {extracted} / {len(tf_headers)}")
 
         if extracted == 0:
-            (project_output / "result").mkdir(exist_ok=True)
-            tbl_path = project_output / "result" / "match_tbl.txt"
-            tbl_path.write_text("", encoding="utf-8")
+            if not write_empty_tf_tr_outputs_step(context, debug=debug, step_number=1):
+                return False
             continue
 
         analysis_success = run_tf_tr_analysis_pipeline(
@@ -1088,7 +1148,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
             interproscan_path=interproscan_path,
             run_interproscan_analysis=True,
             run_hmmscan_analysis=True,
-            step_numbers=(3, 4, 5),
+            step_numbers=(1, 2, 3),
         )
         if not analysis_success:
             return False

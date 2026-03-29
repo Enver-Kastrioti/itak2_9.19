@@ -199,7 +199,7 @@ Feature options:
 - --use-supplementary     Enable supplementary models (optional)
 - --supplementary-only    Use supplementary models only; skip the main model
 - --supp-models           Optional: specify supplementary model files (multiple allowed); if omitted, use all models in the directory
-- --grad-cam-mode         Grad-CAM mode: none (default)/fast/all/positive (all/positive require --predict; --list-predict currently unsupported)
+- --grad-cam-mode         Grad-CAM mode: none (default)/fast/all/positive (all/positive require --predict; --list-predict still unsupported)
 - --appl                  InterProScan application list (comma-separated; defaults to common libraries)
 - --interproscan          Path to an external interproscan.sh (hmmscan will follow that InterProScan)
 - --skip-pk               Skip protein kinase identification/classification
@@ -256,6 +256,9 @@ Examples
 13. Run prediction mode with a positive protein kinase sample:
    ./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
 
+14. Run list-predict mode with shared protein kinase analysis across thresholds:
+   python itak3-v1.0.py --list-predict -i test_pk_no_tf_candidate.fasta -o /path/to/list_predict_out
+
 Outputs
 --------
 The program creates the following files and directories under the output directory:
@@ -265,12 +268,12 @@ The program creates the following files and directories under the output directo
 ├── protein_model_preclassification/       # Prediction outputs (only with --predict/--list-predict)
 │   ├── <name>_prediction.csv              # Predictions for all sequences
 │   ├── <name>_prediction_tf_only.csv      # Subset with TF_Probability >= threshold
-│   └── <name>_tf_sequences.fasta          # Extracted TF sequences
+│   └── <name>_tf_sequences.fasta          # Extracted TF sequences (may be empty at stricter thresholds)
 ├── InterproScan/                          # InterProScan output directory
 │   └── <input>.json
 ├── hmmscan/                               # hmmscan output directory
 │   └── result.tbl
-├── protein_kinase/                        # Protein kinase outputs (default direct/predict modes)
+├── protein_kinase/                        # Protein kinase outputs (default direct/predict/--list-predict modes unless --skip-pk)
 │   ├── match_tbl.txt                      # PK classification table in the same 6-column style as TF/TR match_tbl.txt
 │   ├── match.json                         # Debug output (--debug): PK classification JSON in the same schema as TF/TR match.json
 │   ├── <name>_pk_classified.fasta         # Classified PK sequences in the same header style as TF classified FASTA

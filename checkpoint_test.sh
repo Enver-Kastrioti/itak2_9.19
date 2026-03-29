@@ -151,6 +151,42 @@ if [[ "$SUITE" == "full" ]]; then
     exit 1
   fi
 
+  run_step "List Predict PK Contract" \
+    "$ROOT_DIR/run_itak3_local.sh" \
+    --list-predict \
+    -i "$ROOT_DIR/test_pk_no_tf_candidate.fasta" \
+    --appl "$APPL_LIST" \
+    -o "$OUTPUT_ROOT/list_predict_contract"
+
+  LIST_BASE="$OUTPUT_ROOT/list_predict_contract"
+  LIST_PREFIX="test_pk_no_tf_candidate"
+  check_file "$LIST_BASE/${LIST_PREFIX}_no_pre/result/all_match_tbl.txt"
+  check_file "$LIST_BASE/${LIST_PREFIX}_no_pre/protein_kinase/pk_classification.tsv"
+  check_file "$LIST_BASE/${LIST_PREFIX}_10/result/match_tbl.txt"
+  check_file "$LIST_BASE/${LIST_PREFIX}_10/result/all_match_tbl.txt"
+  check_file "$LIST_BASE/${LIST_PREFIX}_10/protein_kinase/pk_classification.tsv"
+  check_file "$LIST_BASE/${LIST_PREFIX}_10/protein_model_preclassification/${LIST_PREFIX}_prediction.csv"
+  check_file "$LIST_BASE/${LIST_PREFIX}_10/protein_model_preclassification/${LIST_PREFIX}_protein_replaced_tf_sequences.fasta"
+  check_file "$LIST_BASE/${LIST_PREFIX}_30/result/match_tbl.txt"
+  check_file "$LIST_BASE/${LIST_PREFIX}_30/result/all_match_tbl.txt"
+  check_file "$LIST_BASE/${LIST_PREFIX}_30/protein_kinase/pk_classification.tsv"
+
+  if [[ ! -s "$LIST_BASE/${LIST_PREFIX}_10/protein_model_preclassification/${LIST_PREFIX}_protein_replaced_tf_sequences.fasta" ]]; then
+    echo "Expected non-empty TF FASTA for --list-predict threshold 0.1" >&2
+    exit 1
+  fi
+
+  if [[ -s "$LIST_BASE/${LIST_PREFIX}_30/result/match_tbl.txt" ]]; then
+    echo "Expected empty TF/TR match table for --list-predict threshold 0.3" >&2
+    exit 1
+  fi
+
+  list_pk_count="$(tail -n +2 "$LIST_BASE/${LIST_PREFIX}_30/protein_kinase/pk_classification.tsv" | awk 'NF{count++} END{print count+0}')"
+  if [[ "$list_pk_count" -lt 1 ]]; then
+    echo "Expected at least 1 protein kinase classification for --list-predict threshold 0.3" >&2
+    exit 1
+  fi
+
   run_step "Debug PK Positive" \
     "$ROOT_DIR/run_itak3_local.sh" \
     -i "$ROOT_DIR/test_protein_kinase.fasta" \
