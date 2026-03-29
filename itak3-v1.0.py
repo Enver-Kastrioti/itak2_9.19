@@ -13,6 +13,7 @@ import time
 import json
 import shutil
 import tarfile
+from dataclasses import dataclass
 
 # Import dependency checker module
 try:
@@ -51,6 +52,54 @@ MODULE_DIR = SCRIPT_DIR / "module"
 DB_DIR = SCRIPT_DIR / "db"
 DB_ARCHIVE = SCRIPT_DIR / "db.tar.gz"
 INTERPROSCAN_SCRIPT = DB_DIR / "interproscan" / "interproscan.sh"
+
+
+@dataclass(frozen=True)
+class PipelineContext:
+    input_fasta: Path
+    project_output: Path
+    processed_fasta: Path
+    preclass_dir: Path
+    prediction_csv: Path
+    prediction_tf_only_csv: Path
+    tf_fasta: Path
+    interproscan_dir: Path
+    hmmscan_dir: Path
+    protein_kinase_dir: Path
+    result_dir: Path
+    getrule_json: Path
+
+    def resolve_tf_fasta(self):
+        if self.tf_fasta.exists():
+            return self.tf_fasta
+
+        candidates = sorted(self.preclass_dir.glob("*_tf_sequences.fasta"))
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    def resolve_analysis_fasta(self, use_predicted):
+        if use_predicted:
+            return self.resolve_tf_fasta()
+        return self.processed_fasta
+
+    def resolve_interpro_json(self, analysis_fasta):
+        if analysis_fasta is not None:
+            candidate = self.interproscan_dir / f"{Path(analysis_fasta).name}.json"
+            if candidate.exists():
+                return candidate
+
+        original_json = self.interproscan_dir / f"{self.input_fasta.name}.json"
+        if original_json.exists():
+            return original_json
+
+        json_files = list(self.interproscan_dir.glob("*.json"))
+        if len(json_files) == 1:
+            return json_files[0]
+
+        if analysis_fasta is not None:
+            return self.interproscan_dir / f"{Path(analysis_fasta).name}.json"
+        return original_json
 
 def ensure_db_extracted():
     """
@@ -154,6 +203,74 @@ def setup_project_output(fasta_file, output=None):
     return project_output
 
 
+def _load_module_from_path(module_name, module_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_get_fasta_module():
+    return _load_module_from_path("get_fasta", MODULE_DIR / "get_fasta.py")
+
+
+def _resolve_processed_fasta_path(fasta_file, project_output):
+    try:
+        module = _load_get_fasta_module()
+        return Path(module.get_processed_fasta_path(str(fasta_file), project_output))
+    except Exception:
+        return Path(project_output) / f"{Path(fasta_file).stem}_protein_replaced.fasta"
+
+
+def _ensure_processed_fasta(context):
+    processed_fasta = context.processed_fasta
+    if processed_fasta.exists():
+        return processed_fasta
+
+    try:
+        module = _load_get_fasta_module()
+        output_path = module.generate_protein_fasta_with_translation(
+            str(context.input_fasta),
+            output_dir=context.project_output,
+        )
+        if output_path:
+            return Path(output_path)
+    except Exception:
+        pass
+
+    return context.input_fasta
+
+
+def build_pipeline_context(fasta_file, output=None, project_output=None):
+    input_fasta = Path(fasta_file)
+    project_output = Path(project_output) if project_output else setup_project_output(str(input_fasta), output)
+    processed_fasta = _resolve_processed_fasta_path(input_fasta, project_output)
+    processed_stem = processed_fasta.stem
+
+    preclass_dir = project_output / "protein_model_preclassification"
+    interproscan_dir = project_output / "InterproScan"
+    hmmscan_dir = project_output / "hmmscan"
+    protein_kinase_dir = project_output / "protein_kinase"
+    result_dir = project_output / "result"
+
+    return PipelineContext(
+        input_fasta=input_fasta,
+        project_output=project_output,
+        processed_fasta=processed_fasta,
+        preclass_dir=preclass_dir,
+        prediction_csv=preclass_dir / f"{input_fasta.stem}_prediction.csv",
+        prediction_tf_only_csv=preclass_dir / f"{input_fasta.stem}_prediction_tf_only.csv",
+        tf_fasta=preclass_dir / f"{processed_stem}_tf_sequences.fasta",
+        interproscan_dir=interproscan_dir,
+        hmmscan_dir=hmmscan_dir,
+        protein_kinase_dir=protein_kinase_dir,
+        result_dir=result_dir,
+        getrule_json=project_output / "getrule.json",
+    )
+
+
 def _load_tf_tr_match_table(match_tbl_path):
     records = {}
     match_tbl_path = Path(match_tbl_path)
@@ -245,15 +362,7 @@ def _write_combined_result_summary(project_output):
     return True
 
 def cleanup_processed_fasta(project_output, fasta_file):
-    try:
-        import importlib.util
-        get_fasta_path = MODULE_DIR / "get_fasta.py"
-        spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        processed_fasta = Path(module.get_processed_fasta_path(fasta_file, project_output))
-    except Exception:
-        processed_fasta = Path(project_output) / f"{Path(fasta_file).stem}_protein_replaced.fasta"
+    processed_fasta = _resolve_processed_fasta_path(fasta_file, project_output)
 
     try:
         if processed_fasta.exists() and processed_fasta.is_file():
@@ -276,13 +385,12 @@ def resolve_existing_project_output(fasta_file, output=None):
     return candidates[0]
 
 # Analysis-module pipeline
-def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=False, score_threshold=1.0, classification_mode='specific'):
+def run_analysis_modules(context, use_predicted=True, debug=False, score_threshold=1.0, classification_mode='specific'):
     """
     Run analysis modules for transcription factor family classification.
     
     Args:
-        project_output (Path): Project output directory.
-        fasta_file (str): Input FASTA file path.
+        context (PipelineContext): Pipeline context with resolved paths.
         use_predicted (bool): Whether to use predicted TF sequences.
         debug (bool): Whether to enable debug mode and write intermediate artifacts.
         score_threshold (float): Score threshold for filtering InterProScan results.
@@ -296,58 +404,21 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
     print(f"{'='*50}")
     
     try:
-        # Determine which FASTA file to use
+        analysis_path = context.resolve_analysis_fasta(use_predicted)
         if use_predicted:
-            # Use predicted TF sequence FASTA
-            tf_fasta_file = project_output / "protein_model_preclassification" / f"{Path(fasta_file).stem}_tf_sequences.fasta"
-            if not tf_fasta_file.exists():
-                candidates = sorted((project_output / "protein_model_preclassification").glob("*_tf_sequences.fasta"))
-                if len(candidates) == 1:
-                    tf_fasta_file = candidates[0]
-                    print(f"Warning: predicted TF FASTA file not found: {project_output / 'protein_model_preclassification' / f'{Path(fasta_file).stem}_tf_sequences.fasta'}")
-                    print(f"Using detected TF FASTA instead: {tf_fasta_file}")
-                    analysis_fasta = str(tf_fasta_file)
-                else:
-                    print(f"Warning: predicted TF FASTA file not found: {tf_fasta_file}")
-                    print("Falling back to the original input for analysis")
-                    analysis_fasta = fasta_file
-            else:
-                analysis_fasta = str(tf_fasta_file)
+            if analysis_path is None:
+                print(f"Warning: predicted TF FASTA file not found: {context.tf_fasta}")
+                print("Falling back to the original input for analysis")
+                analysis_path = context.input_fasta
+            elif analysis_path != context.tf_fasta:
+                print(f"Warning: predicted TF FASTA file not found: {context.tf_fasta}")
+                print(f"Using detected TF FASTA instead: {analysis_path}")
         else:
-            try:
-                import importlib.util
-                get_fasta_path = MODULE_DIR / "get_fasta.py"
-                spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
-                get_fasta = module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                processed_path = module.get_processed_fasta_path(fasta_file, project_output)
-                if not Path(processed_path).exists():
-                    module.generate_protein_fasta_with_translation(fasta_file, output_dir=project_output)
-                analysis_fasta = processed_path
-            except Exception:
-                analysis_fasta = fasta_file
-        
-        # Determine other required file paths
-        # InterProScan output filenames include the full input filename (including extension)
-        input_filename = Path(analysis_fasta).name
-        ipr_file = project_output / "InterproScan" / f"{input_filename}.json"
-        hmmscan_file = project_output / "hmmscan" / "result.tbl"
-        rule_file = SCRIPT_DIR / "rule.txt"
+            analysis_path = _ensure_processed_fasta(context)
 
-        # In test mode, ipr_file may need adjustment because run_test_mode may copy using a different name.
-        if not ipr_file.exists():
-            # Attempt to locate alternative JSON files
-            # 1) Try JSON derived from the original FASTA filename (when analysis_fasta is a processed FASTA)
-            original_json_file = project_output / "InterproScan" / f"{Path(fasta_file).name}.json"
-            if original_json_file.exists():
-                print(f"Warning: {ipr_file.name} not found; using {original_json_file.name} instead")
-                ipr_file = original_json_file
-            else:
-                # 2) If there is exactly one JSON file in the directory, use it
-                json_files = list((project_output / "InterproScan").glob("*.json"))
-                if len(json_files) == 1:
-                    print(f"Warning: {ipr_file.name} not found; using the only JSON file in directory: {json_files[0].name}")
-                    ipr_file = json_files[0]
+        ipr_file = context.resolve_interpro_json(analysis_path)
+        hmmscan_file = context.hmmscan_dir / "result.tbl"
+        rule_file = SCRIPT_DIR / "rule.txt"
         
         # Check required files
         missing_files = []
@@ -365,19 +436,19 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             return False
         
         print("Inputs:")
-        print(f"  FASTA: {analysis_fasta}")
+        print(f"  FASTA: {analysis_path}")
         print(f"  IPR JSON: {ipr_file}")
         print(f"  hmmscan: {hmmscan_file}")
         print(f"  Rule file: {rule_file}")
         
         # Create result output directory (under the project directory)
-        result_dir = project_output / "result"
+        result_dir = context.result_dir
         result_dir.mkdir(exist_ok=True)
         print(f"Results will be written to: {result_dir}")
         
         # Step 0: run get_rule and write rule JSON under the project directory
         print("\nStep 0: running get_rule...")
-        getrule_success = run_getrule_module(str(rule_file), str(project_output), debug=debug)
+        getrule_success = run_getrule_module(str(rule_file), str(context.project_output), debug=debug)
         if not getrule_success:
             print("get_rule failed")
             return False
@@ -428,7 +499,7 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
         # Step 3: run classification (supports in-memory data passing)
         print("\nStep 3: running classification...")
         class_tf_success = run_class_tf_module(
-            analysis_fasta, 
+            str(analysis_path),
             str(rule_file), 
             result_dir, 
             debug=debug,
@@ -440,7 +511,7 @@ def run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=F
             print("classification failed")
             return False
 
-        _write_combined_result_summary(project_output)
+        _write_combined_result_summary(context.project_output)
         
         print(f"\n{'='*50}")
         print("All analysis modules completed")
@@ -750,18 +821,8 @@ def extract_tf_sequences_from_csv(fasta_file, csv_file, output_dir, threshold):
         return None
 
 def _get_or_create_processed_fasta(fasta_file, output_dir):
-    try:
-        import importlib.util
-        get_fasta_path = MODULE_DIR / "get_fasta.py"
-        spec = importlib.util.spec_from_file_location("get_fasta", get_fasta_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        processed_fasta = Path(module.get_processed_fasta_path(fasta_file, output_dir))
-        if not processed_fasta.exists():
-            module.generate_protein_fasta_with_translation(fasta_file, output_dir=output_dir)
-        return str(processed_fasta)
-    except Exception:
-        return str(fasta_file)
+    context = build_pipeline_context(fasta_file, project_output=output_dir)
+    return str(_ensure_processed_fasta(context))
 
 
 def _run_protein_kinase_analysis(fasta_file, project_output, enabled=True, debug=False):
@@ -946,12 +1007,13 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
 
         child_output = outputs[t]
         print(f"\n=== Output: {child_output.name} (threshold={t}) ===")
-        project_output = setup_project_output(fasta_file, str(child_output))
-        preclass_dir = project_output / "protein_model_preclassification"
+        context = build_pipeline_context(fasta_file, project_output=child_output)
+        project_output = context.project_output
+        preclass_dir = context.preclass_dir
         preclass_dir.mkdir(exist_ok=True)
 
-        prediction_csv = preclass_dir / f"{fasta_basename}_prediction.csv"
-        tf_only_csv = preclass_dir / f"{fasta_basename}_prediction_tf_only.csv"
+        prediction_csv = context.prediction_csv
+        tf_only_csv = context.prediction_tf_only_csv
         _write_threshold_prediction_files(rows, prediction_csv, tf_only_csv, t)
 
         tf_headers = [r["Header"] for r in rows if float(r["TF_Probability"]) >= t]
@@ -979,8 +1041,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
 
         print("\n5. Running classification analysis...")
         analysis_success = run_analysis_modules(
-            project_output,
-            fasta_file,
+            context,
             use_predicted=True,
             debug=debug,
             score_threshold=score_threshold,
@@ -1181,7 +1242,8 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             return False
         
         # Set project output directory
-        project_output = setup_project_output(fasta_file, output)
+        context = build_pipeline_context(fasta_file, output=output)
+        project_output = context.project_output
         
         print("\n=== Starting TF Prediction ===\n")
         print(f"Input file: {fasta_file}")
@@ -1191,7 +1253,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         if grad_cam_mode != 'none':
             print(f"Grad-CAM: enabled (mode: {grad_cam_mode})")
 
-        processed_fasta = _get_or_create_processed_fasta(fasta_file, project_output)
+        processed_fasta = _ensure_processed_fasta(context)
         
         # Build prediction command
         if not PREDICT_SCRIPT.exists():
@@ -1202,10 +1264,10 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         fasta_basename = Path(fasta_file).stem
         
         # Create preclassification output directory
-        preclass_dir = project_output / "protein_model_preclassification"
+        preclass_dir = context.preclass_dir
         preclass_dir.mkdir(exist_ok=True)
         
-        output_file = preclass_dir / f"{fasta_basename}_prediction.csv"
+        output_file = context.prediction_csv
         
         abs_fasta = str(Path(fasta_file).absolute())
         abs_project_output = str(project_output.absolute())
@@ -1268,7 +1330,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             step_start_time = time.time()
             
             # Create FASTA output directory
-            fasta_output_dir = project_output / "protein_model_preclassification"
+            fasta_output_dir = context.preclass_dir
             fasta_output_dir.mkdir(exist_ok=True)
             
             prediction_file = output_file
@@ -1343,7 +1405,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             print("\n6. Running classification analysis...")
             step_start_time = time.time()
             
-            analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=True, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
+            analysis_success = run_analysis_modules(context, use_predicted=True, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
             
             step_end_time = time.time()
             step_duration = step_end_time - step_start_time
@@ -1433,13 +1495,14 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             return False
         
         # Set project output directory
-        project_output = setup_project_output(fasta_file, output)
+        context = build_pipeline_context(fasta_file, output=output)
+        project_output = context.project_output
         
         print("\n=== Starting Sequence Analysis ===\n")
         print(f"Input file: {fasta_file}")
         print(f"Output directory: {project_output}")
         
-        processed_fasta = _get_or_create_processed_fasta(fasta_file, project_output)
+        processed_fasta = _ensure_processed_fasta(context)
         interproscan_success = False
         hmmscan_success = False
         analysis_success = False
@@ -1466,7 +1529,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print("\n2. Running InterProScan...")
         step_start_time = time.time()
         
-        interproscan_success = run_interproscan(processed_fasta, str(project_output), appl_list, interproscan_path)
+        interproscan_success = run_interproscan(str(processed_fasta), str(project_output), appl_list, interproscan_path)
         
         step_end_time = time.time()
         step_duration = step_end_time - step_start_time
@@ -1481,7 +1544,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print("\n3. Running hmmscan...")
         step_start_time = time.time()
         
-        hmmscan_success = run_hmmscan(processed_fasta, str(project_output), interproscan_path)
+        hmmscan_success = run_hmmscan(str(processed_fasta), str(project_output), interproscan_path)
         
         step_end_time = time.time()
         step_duration = step_end_time - step_start_time
@@ -1497,7 +1560,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             print("\n4. Running classification analysis...")
             step_start_time = time.time()
             
-            analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
+            analysis_success = run_analysis_modules(context, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
             
             step_end_time = time.time()
             step_duration = step_end_time - step_start_time
@@ -1532,13 +1595,14 @@ def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False,
     
     try:
         # Set project output directory
-        project_output = setup_project_output(fasta_file, output)
+        context = build_pipeline_context(fasta_file, output=output)
+        project_output = context.project_output
         print(f"Project output directory: {project_output}")
         
         # Create required subdirectories
-        ipr_dir = project_output / "InterproScan"
-        hmmscan_dir = project_output / "hmmscan"
-        result_dir = project_output / "result"
+        ipr_dir = context.interproscan_dir
+        hmmscan_dir = context.hmmscan_dir
+        result_dir = context.result_dir
         
         ipr_dir.mkdir(exist_ok=True)
         hmmscan_dir.mkdir(exist_ok=True)
@@ -1576,7 +1640,7 @@ def run_test_mode(fasta_file, json_file, spechmm_file, output=None, debug=False,
         analysis_start_time = time.time()
         
         # Run analysis modules (use original FASTA; no prediction)
-        analysis_success = run_analysis_modules(project_output, fasta_file, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
+        analysis_success = run_analysis_modules(context, use_predicted=False, debug=debug, score_threshold=score_threshold, classification_mode=classification_mode)
         
         # Compute runtime
         analysis_end_time = time.time()
