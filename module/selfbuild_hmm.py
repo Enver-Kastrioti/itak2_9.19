@@ -3,7 +3,7 @@ import os
 import argparse
 from collections import defaultdict
 
-def parse_pfam_spec(file_path):
+def parse_pfam_spec(file_path, score_threshold=20.0):
     # Use defaultdict to store the parsed results
     result = defaultdict(lambda: defaultdict(list))
     hit_counts = defaultdict(lambda: defaultdict(int))
@@ -27,10 +27,10 @@ def parse_pfam_spec(file_path):
             evalue = fields[7]     # Column 8
             score = fields[8]      # Column 9
             
-            # Enforce a minimum score threshold
+            # Enforce the user-configured score threshold
             try:
                 score_value = float(score)
-                if score_value < 20:
+                if score_value < score_threshold:
                     continue
             except ValueError:
                 continue
@@ -93,6 +93,7 @@ def main():
     parser = argparse.ArgumentParser(description='Process PFAM specificity analysis results')
     parser.add_argument('-i', '--input', required=True, help='Path to the input file (hmmscan result file)')
     parser.add_argument('-o', '--output', required=True, help='Path to the output directory')
+    parser.add_argument('--score', type=float, default=20.0, help='Minimum hmmscan score threshold (default: 20.0)')
     
     args = parser.parse_args()
     
@@ -107,7 +108,7 @@ def main():
     
     try:
         # Parse the input file
-        result = parse_pfam_spec(input_file)
+        result = parse_pfam_spec(input_file, score_threshold=args.score)
         
         # Write results to JSON
         with open(output_file, 'w', encoding='utf-8') as f:

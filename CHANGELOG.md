@@ -12,20 +12,20 @@
 - Added bundled protein kinase database assets under `db/itak3_pk/`.
 - Added positive protein kinase example input: `test_protein_kinase.fasta`.
 - Added positive protein kinase smoke-test coverage for both direct mode and `--predict` mode.
-- Added combined result summary output: `result/all_match_tbl.txt`.
+- Added optional combined result summary output: `result/all_match_tbl.txt` in `--debug` mode.
 
 ### Changed
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
 - Added `--skip-pk` to disable protein kinase analysis when needed.
-- Aligned protein kinase outputs with TF/TR result style:
-  - `protein_kinase/match_tbl.txt`
-  - `protein_kinase/match.json` in `--debug` mode
+- Simplified protein kinase outputs to avoid duplicate files:
   - `protein_kinase/<name>_pk_classified.fasta`
-- Preserved legacy-compatible protein kinase outputs:
-  - `protein_kinase/pk_sequence.fasta`
   - `protein_kinase/pk_classification.tsv`
   - `protein_kinase/shiu_classification.txt`
   - `protein_kinase/PPC_classification.txt`
+  - `protein_kinase/match.json` in `--debug` mode
+- Applied `--score` filtering to both InterProScan-derived and hmmscan-derived hits.
+- Replaced blind six-frame translation of nucleotide inputs with complete-ORF extraction during preprocessing.
+- Enforced processed-FASTA validation so protein sequences containing `*` do not reach InterProScan.
 
 ### Verification
 - `./smoke_test.sh --output output/smoke_test_regression_default`

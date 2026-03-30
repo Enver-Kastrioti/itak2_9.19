@@ -131,7 +131,6 @@ if [[ "$SUITE" == "full" ]]; then
     -o "$OUTPUT_ROOT/predict_pk_no_tf"
 
   check_file "$OUTPUT_ROOT/predict_pk_no_tf/result/match_tbl.txt"
-  check_file "$OUTPUT_ROOT/predict_pk_no_tf/result/all_match_tbl.txt"
   check_file "$OUTPUT_ROOT/predict_pk_no_tf/protein_kinase/pk_classification.tsv"
 
   if [[ -s "$OUTPUT_ROOT/predict_pk_no_tf/result/match_tbl.txt" ]]; then
@@ -145,12 +144,6 @@ if [[ "$SUITE" == "full" ]]; then
     exit 1
   fi
 
-  no_tf_summary_count="$(tail -n +2 "$OUTPUT_ROOT/predict_pk_no_tf/result/all_match_tbl.txt" | awk 'NF{count++} END{print count+0}')"
-  if [[ "$no_tf_summary_count" -lt 1 ]]; then
-    echo "Expected combined summary rows for no-TF prediction case" >&2
-    exit 1
-  fi
-
   run_step "List Predict PK Contract" \
     "$ROOT_DIR/run_itak3_local.sh" \
     --list-predict \
@@ -160,15 +153,12 @@ if [[ "$SUITE" == "full" ]]; then
 
   LIST_BASE="$OUTPUT_ROOT/list_predict_contract"
   LIST_PREFIX="test_pk_no_tf_candidate"
-  check_file "$LIST_BASE/${LIST_PREFIX}_no_pre/result/all_match_tbl.txt"
   check_file "$LIST_BASE/${LIST_PREFIX}_no_pre/protein_kinase/pk_classification.tsv"
   check_file "$LIST_BASE/${LIST_PREFIX}_10/result/match_tbl.txt"
-  check_file "$LIST_BASE/${LIST_PREFIX}_10/result/all_match_tbl.txt"
   check_file "$LIST_BASE/${LIST_PREFIX}_10/protein_kinase/pk_classification.tsv"
   check_file "$LIST_BASE/${LIST_PREFIX}_10/protein_model_preclassification/${LIST_PREFIX}_prediction.csv"
   check_file "$LIST_BASE/${LIST_PREFIX}_10/protein_model_preclassification/${LIST_PREFIX}_protein_replaced_tf_sequences.fasta"
   check_file "$LIST_BASE/${LIST_PREFIX}_30/result/match_tbl.txt"
-  check_file "$LIST_BASE/${LIST_PREFIX}_30/result/all_match_tbl.txt"
   check_file "$LIST_BASE/${LIST_PREFIX}_30/protein_kinase/pk_classification.tsv"
 
   if [[ ! -s "$LIST_BASE/${LIST_PREFIX}_10/protein_model_preclassification/${LIST_PREFIX}_protein_replaced_tf_sequences.fasta" ]]; then

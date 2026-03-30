@@ -187,7 +187,7 @@ python itak3-v1.0.py [options] -i <input_file>
 - `-i, --input`: Input FASTA file path (required except with --check-deps)
 - `-o, --output`: Output directory path (optional; default: output/<input_basename>/)
 - `-t, --threshold`: Prediction threshold in [0,1] (default: 0.1; affects prediction only)
-- `--score`: Score threshold for InterProScan filtering (default: 1.0)
+- `--score`: Score threshold for InterProScan and hmmscan-derived domain-hit filtering (default: 1.0)
 - `--classification-mode`: Classification mode: specific (specificity-first) or score (score-first, default)
 
 Feature options:
@@ -274,17 +274,15 @@ The program creates the following files and directories under the output directo
 ├── hmmscan/                               # hmmscan output directory
 │   └── result.tbl
 ├── protein_kinase/                        # Protein kinase outputs (default direct/predict/--list-predict modes unless --skip-pk)
-│   ├── match_tbl.txt                      # PK classification table in the same 6-column style as TF/TR match_tbl.txt
 │   ├── match.json                         # Debug output (--debug): PK classification JSON in the same schema as TF/TR match.json
 │   ├── <name>_pk_classified.fasta         # Classified PK sequences in the same header style as TF classified FASTA
-│   ├── pk_sequence.fasta
-│   ├── pk_classification.tsv
-│   ├── shiu_classification.txt
-│   └── PPC_classification.txt
+│   ├── pk_classification.tsv              # Primary PK classification table
+│   ├── shiu_classification.txt            # Shiu class summary
+│   └── PPC_classification.txt             # PPC class summary
 ├── getrule.json                           # Debug output (--debug): parsed classification rules
 └── result/                                # Classification results
     ├── match_tbl.txt                      # Final TF family classification results (table)
-    ├── all_match_tbl.txt                  # Combined TF/TR + protein kinase summary table
+    ├── all_match_tbl.txt                  # Debug output (--debug): combined TF/TR + protein kinase summary table
     ├── <name>_tf_classified.fasta         # Classified TF sequences
     ├── match.json                         # Debug output (--debug)
     ├── processed_ipr_domains.json         # Domain architecture JSON (sequence ↔ domain hits; optional)
@@ -296,14 +294,15 @@ Grad-CAM outputs:
 
 Workflow
 --------
-1. Input validation: validate FASTA structure and protein sequences
+1. Input validation: validate FASTA structure and mixed protein/CDS inputs
 2. Dependency checks: verify required tools and libraries
-3. Prediction stage (optional): run deep learning model inference for TF preclassification
-4. Protein kinase analysis: run bundled PK HMMs on the processed protein FASTA
-5. Domain analysis: run InterProScan and hmmscan
-6. Result processing: parse and filter analysis outputs
-7. TF family classification: apply rule-based family assignment
-8. Output reporting: write classification reports and FASTA files
+3. Input preprocessing: keep valid proteins and translate nucleotide entries through complete-ORF extraction
+4. Prediction stage (optional): run deep learning model inference for TF preclassification
+5. Protein kinase analysis: run bundled PK HMMs on the processed protein FASTA
+6. Domain analysis: run InterProScan and hmmscan
+7. Result processing: parse and filter analysis outputs
+8. TF family classification: apply rule-based family assignment
+9. Output reporting: write classification reports and FASTA files
 
 FAQ / Troubleshooting
 --------

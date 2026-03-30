@@ -269,10 +269,35 @@ def _resolve_processed_fasta_path(fasta_file, project_output):
         return Path(project_output) / f"{Path(fasta_file).stem}_protein_replaced.fasta"
 
 
+def _validate_fasta_file(fasta_path, allow_nucleotide=True, stage="FASTA validation"):
+    if FastaValidator is None:
+        return True
+
+    validator = FastaValidator()
+    is_valid = validator.run_full_validation(str(fasta_path), allow_nucleotide=allow_nucleotide)
+    if not is_valid:
+        raise PipelineStageError(stage, f"Validation failed for {fasta_path}")
+    return True
+
+
 def _ensure_processed_fasta(context):
     processed_fasta = context.processed_fasta
     if processed_fasta.exists():
-        return processed_fasta
+        try:
+            _validate_fasta_file(
+                processed_fasta,
+                allow_nucleotide=False,
+                stage="Input preprocessing",
+            )
+            return processed_fasta
+        except PipelineStageError:
+            try:
+                processed_fasta.unlink()
+            except OSError as exc:
+                raise PipelineStageError(
+                    "Input preprocessing",
+                    f"Existing processed FASTA is invalid and could not be removed: {exc}",
+                ) from exc
 
     try:
         module = _load_get_fasta_module()
@@ -281,11 +306,22 @@ def _ensure_processed_fasta(context):
             output_dir=context.project_output,
         )
         if output_path:
-            return Path(output_path)
-    except Exception:
-        pass
+            output_path = Path(output_path)
+            _validate_fasta_file(
+                output_path,
+                allow_nucleotide=False,
+                stage="Input preprocessing",
+            )
+            return output_path
+    except PipelineStageError:
+        raise
+    except Exception as exc:
+        raise PipelineStageError("Input preprocessing", str(exc)) from exc
 
-    return context.input_fasta
+    raise PipelineStageError(
+        "Input preprocessing",
+        f"Failed to generate a processed protein FASTA from {context.input_fasta}",
+    )
 
 
 def build_pipeline_context(fasta_file, output=None, project_output=None):
@@ -371,12 +407,17 @@ def _build_prediction_command(
     return cmd
 
 
-def _write_combined_result_summary(project_output, tf_records=None, pk_records=None):
+def _write_combined_result_summary(project_output, tf_records=None, pk_records=None, enabled=False):
     project_output = Path(project_output)
     result_dir = project_output / "result"
     result_dir.mkdir(exist_ok=True)
 
     summary_path = result_dir / "all_match_tbl.txt"
+    if not enabled:
+        if summary_path.exists():
+            summary_path.unlink()
+        return True
+
     if tf_records is None:
         if load_tftr_records_from_table is not None:
             tf_records = load_tftr_records_from_table(result_dir / "match_tbl.txt")
@@ -516,7 +557,12 @@ def run_analysis_modules(context, use_predicted=True, debug=False, score_thresho
         
         # Step 2: run selfbuild_hmm
         print("\nStep 2: running selfbuild_hmm...")
-        specpfam_result = run_specpfam_module(str(hmmscan_file), result_dir, debug=debug)
+        specpfam_result = run_specpfam_module(
+            str(hmmscan_file),
+            result_dir,
+            debug=debug,
+            score_threshold=score_threshold,
+        )
         
         # Evaluate selfbuild_hmm results
         if isinstance(specpfam_result, tuple):
@@ -556,7 +602,12 @@ def run_analysis_modules(context, use_predicted=True, debug=False, score_thresho
             print("classification failed")
             return False
 
-        _write_combined_result_summary(context.project_output, tf_records=tf_records)
+        _write_combined_result_summary(
+            context.project_output,
+            tf_records=tf_records,
+            enabled=debug,
+        )
+        
         
         print(f"\n{'='*50}")
         print("All analysis modules completed")
@@ -658,7 +709,7 @@ def run_jsonbuild_module(ipr_file, result_dir, debug=False, score_threshold=1.0)
         print(f"Error while running get_json: {e}")
         return False, None, None
 
-def run_specpfam_module(hmmscan_file, result_dir, debug=False):
+def run_specpfam_module(hmmscan_file, result_dir, debug=False, score_threshold=1.0):
     """Run selfbuild_hmm."""
     try:
         # Import and call selfbuild_hmm
@@ -669,7 +720,7 @@ def run_specpfam_module(hmmscan_file, result_dir, debug=False):
         spec.loader.exec_module(selfbuild_hmm)
         
         # Parse hmmscan results
-        result = selfbuild_hmm.parse_pfam_spec(hmmscan_file)
+        result = selfbuild_hmm.parse_pfam_spec(hmmscan_file, score_threshold=score_threshold)
         
         # Write pfamspec.json only in debug mode
         if debug:
@@ -1510,7 +1561,7 @@ def write_empty_tf_tr_outputs_step(context, debug=False, step_number=None):
         with open(match_json_path, "w", encoding="utf-8") as handle:
             json.dump({}, handle, indent=2, ensure_ascii=False)
 
-    _write_combined_result_summary(context.project_output)
+    _write_combined_result_summary(context.project_output, enabled=debug)
     step_duration = time.time() - step_start_time
 
     print("No TF sequences met the prediction threshold; wrote empty TF/TR outputs")
@@ -1956,7 +2007,7 @@ Example usage:
     
     # Score threshold
     parser.add_argument('--score', type=float, default=1.0,
-                       help='Score threshold for InterProScan filtering; retain only hits above this value (default: 1.0)')
+                       help='Score threshold for domain-hit filtering; apply to both InterProScan and hmmscan-derived hits (default: 1.0)')
     
     # Classification mode
     parser.add_argument('--classification-mode', choices=['specific', 'score'], default='score',
@@ -2043,10 +2094,9 @@ Example usage:
     # Validate FASTA format
     if FastaValidator:
         print(" Validating FASTA format...")
-        validator = FastaValidator()
-        is_valid = validator.run_full_validation(args.input)
-        
-        if not is_valid:
+        try:
+            _validate_fasta_file(args.input, allow_nucleotide=True, stage="Input validation")
+        except PipelineStageError:
             print("[ERROR] FASTA validation failed. Review the errors above.")
             sys.exit(1)
         

@@ -30,8 +30,8 @@ Stabilize the current iTAK3 architecture without changing scientific behavior:
   - debug-mode PK JSON output
 - Expected:
   - at least 2 PK classifications
-  - `protein_kinase/match_tbl.txt` exists
   - `protein_kinase/<name>_pk_classified.fasta` exists
+  - `protein_kinase/pk_classification.tsv` exists
   - `protein_kinase/match.json` exists in `--debug`
 
 ## Test entrypoint
@@ -145,7 +145,7 @@ Scope:
 
 Completion criteria:
 - TF/TR and PK table/JSON/FASTA writers are generated from normalized records
-- `all_match_tbl.txt` is derived from normalized outputs, not from mixed legacy tables
+- `all_match_tbl.txt` is a debug-only combined summary derived from normalized outputs
 
 Required test:
 

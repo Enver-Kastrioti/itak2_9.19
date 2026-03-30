@@ -91,29 +91,23 @@ def write_pk_outputs(records, output_dir, source_stem, debug=False):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    pk_fasta = output_dir / "pk_sequence.fasta"
     classified_pk_fasta = output_dir / f"{source_stem}_pk_classified.fasta"
-    match_tbl = output_dir / "match_tbl.txt"
     pk_tsv = output_dir / "pk_classification.tsv"
     shiu_tsv = output_dir / "shiu_classification.txt"
     ppc_tsv = output_dir / "PPC_classification.txt"
     match_json = output_dir / "match.json"
+    for stale_path in (output_dir / "pk_sequence.fasta", output_dir / "match_tbl.txt"):
+        if stale_path.exists():
+            stale_path.unlink()
 
-    with open(pk_fasta, "w", encoding="utf-8") as fasta_handle, \
-         open(classified_pk_fasta, "w", encoding="utf-8") as classified_handle, \
-         open(match_tbl, "w", encoding="utf-8") as match_handle, \
+    with open(classified_pk_fasta, "w", encoding="utf-8") as classified_handle, \
          open(pk_tsv, "w", encoding="utf-8") as pk_handle, \
          open(shiu_tsv, "w", encoding="utf-8") as shiu_handle, \
          open(ppc_tsv, "w", encoding="utf-8") as ppc_handle:
         pk_handle.write("Sequence_ID\tShiu_Class\tPPC_Class\tPPC_Description\n")
         for seq_id, record in sorted(records.items()):
             header = f">{seq_id} | {record.pk_ppc_class} | PK"
-            fasta_handle.write(f"{header}\n{record.sequence}\n")
             classified_handle.write(f"{header}\n{record.sequence}\n")
-            desc_str = ";".join(record.desc) if record.desc else "NA"
-            match_handle.write(
-                f"{seq_id}\t{record.name}\t{record.family}\t{record.type}\t{desc_str}\t{record.other_family}\n"
-            )
             pk_handle.write(
                 f"{seq_id}\t{record.pk_shiu_class}\t{record.pk_ppc_class}\t{record.pk_ppc_description}\n"
             )
@@ -125,9 +119,7 @@ def write_pk_outputs(records, output_dir, source_stem, debug=False):
             json.dump(records_to_legacy_json(records), handle, indent=2, ensure_ascii=False)
 
     return {
-        "pk_fasta": pk_fasta,
         "classified_fasta": classified_pk_fasta,
-        "table": match_tbl,
         "combined_tsv": pk_tsv,
         "shiu_tsv": shiu_tsv,
         "ppc_tsv": ppc_tsv,

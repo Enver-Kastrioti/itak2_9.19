@@ -273,9 +273,7 @@ def run_protein_kinase_pipeline(fasta_file, project_output, cpu=None, debug=Fals
         else:
             source_stem = Path(fasta_file).stem
             for file_name in (
-                "pk_sequence.fasta",
                 f"{source_stem}_pk_classified.fasta",
-                "match_tbl.txt",
                 "shiu_classification.txt",
                 "PPC_classification.txt",
             ):
