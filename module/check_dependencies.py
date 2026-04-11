@@ -9,6 +9,7 @@ Checks whether the required Python packages and external tools are available.
 import sys
 import subprocess
 import importlib
+import importlib.util
 import shutil
 from pathlib import Path
 import os
@@ -18,13 +19,20 @@ import tarfile
 try:
     from module.runtime_tools import (
         activate_bundled_interproscan_binaries,
+        build_runtime_env,
         resolve_helper_executable,
         resolve_java_executable,
     )
 except ImportError:
     activate_bundled_interproscan_binaries = None
+    build_runtime_env = None
     resolve_helper_executable = None
     resolve_java_executable = None
+
+try:
+    from module.db_manager import validate_interproscan_installation
+except ImportError:
+    validate_interproscan_installation = None
 
 class DependencyChecker:
     """Dependency checker."""
@@ -262,6 +270,61 @@ class DependencyChecker:
                 return False, f"InterProScan binary is macOS-only on this Linux host: {candidate}"
 
         return True, "InterProScan native binaries look compatible with the current platform"
+
+    def check_interproscan_layout(self, interproscan_dir):
+        """Validate the basic InterProScan directory layout and bundled dataset presence."""
+        interproscan_dir = Path(interproscan_dir)
+
+        if validate_interproscan_installation is None:
+            script_path = interproscan_dir / "interproscan.sh"
+            data_dir = interproscan_dir / "data"
+            if not script_path.exists():
+                self.warnings.append(f"InterProScan script does not exist: {script_path}")
+                return False
+            if not data_dir.exists():
+                self.warnings.append(f"InterProScan data directory does not exist: {data_dir}")
+                return False
+            return True
+
+        issues = validate_interproscan_installation(interproscan_dir)
+        if issues:
+            for issue in issues:
+                self.warnings.append(issue)
+            return False
+
+        return True
+
+    def check_interproscan_version(self, interproscan_script, interproscan_dir):
+        """Run a minimal InterProScan self-test."""
+        interproscan_script = Path(interproscan_script)
+        interproscan_dir = Path(interproscan_dir)
+        env = build_runtime_env(self.script_dir) if build_runtime_env else os.environ.copy()
+
+        try:
+            result = subprocess.run(
+                [str(interproscan_script), "-version"],
+                capture_output=True,
+                text=True,
+                cwd=interproscan_dir,
+                env=env,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            return False, f"InterProScan self-test timed out: {interproscan_script} -version"
+        except Exception as e:
+            return False, f"InterProScan self-test could not be executed: {e}"
+
+        if result.returncode != 0:
+            details = (result.stderr or result.stdout or "").strip()
+            if details:
+                details = details.splitlines()[0]
+            else:
+                details = f"exit code {result.returncode}"
+            return False, f"InterProScan self-test failed: {details}"
+
+        output = (result.stdout or result.stderr or "").strip()
+        version_line = output.splitlines()[0] if output else "InterProScan -version completed successfully"
+        return True, version_line
     
     def check_interproscan_setup(self):
         # If an external InterProScan path is specified, validate that installation
@@ -273,12 +336,8 @@ class DependencyChecker:
                 self.warnings.append(f"Specified InterProScan script is not executable: {self.interproscan_path}")
                 return False
                 
-            # Check InterProScan data directory
             interproscan_dir = self.interproscan_path.parent
-            data_dir = interproscan_dir / "data"
-            
-            if not data_dir.exists():
-                self.warnings.append(f"InterProScan data directory does not exist: {data_dir}")
+            if not self.check_interproscan_layout(interproscan_dir):
                 return False
 
             if (
@@ -294,6 +353,11 @@ class DependencyChecker:
             if not native_ok:
                 self.warnings.append(native_msg)
                 return False
+
+            version_ok, version_msg = self.check_interproscan_version(self.interproscan_path, interproscan_dir)
+            if not version_ok:
+                self.warnings.append(version_msg)
+                return False
                 
             return True
 
@@ -307,12 +371,8 @@ class DependencyChecker:
             self.warnings.append(f"InterProScan script is not executable: {interproscan_script}")
             return False
         
-        # Check InterProScan data directory
         interproscan_dir = interproscan_script.parent
-        data_dir = interproscan_dir / "data"
-        
-        if not data_dir.exists():
-            self.warnings.append(f"InterProScan data directory does not exist: {data_dir}")
+        if not self.check_interproscan_layout(interproscan_dir):
             return False
 
         if activate_bundled_interproscan_binaries is not None:
@@ -324,6 +384,11 @@ class DependencyChecker:
         native_ok, native_msg = self.check_interproscan_native_binaries(interproscan_dir)
         if not native_ok:
             self.warnings.append(native_msg)
+            return False
+
+        version_ok, version_msg = self.check_interproscan_version(interproscan_script, interproscan_dir)
+        if not version_ok:
+            self.warnings.append(version_msg)
             return False
         
         return True

@@ -10,6 +10,129 @@ from pathlib import Path
 
 import hashlib
 
+
+INTERPROSCAN_REQUIRED_FILES = (
+    "interproscan.sh",
+    "interproscan-5.jar",
+    "interproscan.properties",
+)
+
+INTERPROSCAN_REQUIRED_NONEMPTY_DIRS = (
+    "bin",
+    "data",
+    "lib",
+)
+
+INTERPROSCAN_REQUIRED_DIRS = (
+    "work",
+    "temp",
+)
+
+INTERPROSCAN_REQUIRED_DATASETS = (
+    "cdd",
+    "ncbifam",
+    "panther",
+    "pfam",
+    "prosite",
+    "smart",
+)
+
+
+def _path_is_non_empty(path):
+    path = Path(path)
+    if not path.exists():
+        return False
+
+    if path.is_dir():
+        try:
+            next(path.iterdir())
+        except StopIteration:
+            return False
+        except OSError:
+            return False
+        return True
+
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def validate_interproscan_installation(interproscan_dir):
+    """
+    Validate that an InterProScan installation has the minimum structure required by iTAK3.
+
+    Returns:
+        list[str]: A list of integrity issues. Empty means the layout looks usable.
+    """
+    interproscan_dir = Path(interproscan_dir)
+    issues = []
+
+    if not interproscan_dir.exists():
+        return [f"InterProScan directory does not exist: {interproscan_dir}"]
+    if not interproscan_dir.is_dir():
+        return [f"InterProScan path is not a directory: {interproscan_dir}"]
+
+    for relative_name in INTERPROSCAN_REQUIRED_FILES:
+        target = interproscan_dir / relative_name
+        if not target.exists():
+            issues.append(f"Missing required file: {target}")
+            continue
+        if not target.is_file():
+            issues.append(f"Required file is not a regular file: {target}")
+            continue
+        if not _path_is_non_empty(target):
+            issues.append(f"Required file is empty: {target}")
+
+    for relative_name in INTERPROSCAN_REQUIRED_NONEMPTY_DIRS:
+        target = interproscan_dir / relative_name
+        if not target.exists():
+            issues.append(f"Missing required directory: {target}")
+            continue
+        if not target.is_dir():
+            issues.append(f"Required directory is not a directory: {target}")
+            continue
+        if not _path_is_non_empty(target):
+            issues.append(f"Required directory is empty: {target}")
+
+    for relative_name in INTERPROSCAN_REQUIRED_DIRS:
+        target = interproscan_dir / relative_name
+        if not target.exists():
+            issues.append(f"Missing required directory: {target}")
+            continue
+        if not target.is_dir():
+            issues.append(f"Required directory is not a directory: {target}")
+
+    data_dir = interproscan_dir / "data"
+    if data_dir.exists() and data_dir.is_dir() and _path_is_non_empty(data_dir):
+        for dataset_name in INTERPROSCAN_REQUIRED_DATASETS:
+            dataset_dir = data_dir / dataset_name
+            if not dataset_dir.exists():
+                issues.append(f"Missing InterProScan dataset directory: {dataset_dir}")
+                continue
+            if not dataset_dir.is_dir():
+                issues.append(f"InterProScan dataset path is not a directory: {dataset_dir}")
+                continue
+            if not _path_is_non_empty(dataset_dir):
+                issues.append(f"InterProScan dataset directory is empty: {dataset_dir}")
+                continue
+
+            has_non_empty_version_dir = False
+            try:
+                for child in dataset_dir.iterdir():
+                    if child.is_dir() and _path_is_non_empty(child):
+                        has_non_empty_version_dir = True
+                        break
+            except OSError:
+                has_non_empty_version_dir = False
+
+            if not has_non_empty_version_dir:
+                issues.append(
+                    f"InterProScan dataset directory has no non-empty version subdirectory: {dataset_dir}"
+                )
+
+    return issues
+
 def calculate_sha256(file_path):
     """Calculate SHA256 hash of a file."""
     sha256_hash = hashlib.sha256()
@@ -19,7 +142,7 @@ def calculate_sha256(file_path):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
-def check_db_integrity(db_path):
+def check_db_integrity(db_path, verbose=True):
     """
     Check if the db directory exists and contains necessary subdirectories.
     
@@ -32,14 +155,15 @@ def check_db_integrity(db_path):
     db_path = Path(db_path)
     if not db_path.exists() or not db_path.is_dir():
         return False
-        
-    # Check for essential subdirectories
-    required_subdirs = ["interproscan"]
-    for subdir in required_subdirs:
-        if not (db_path / subdir).exists():
-            print(f"Missing required subdirectory: {subdir}")
-            return False
-            
+
+    interproscan_dir = db_path / "interproscan"
+    issues = validate_interproscan_installation(interproscan_dir)
+    if issues:
+        if verbose:
+            for issue in issues:
+                print(issue)
+        return False
+
     return True
 
 import subprocess
@@ -123,6 +247,15 @@ def setup_db(project_root):
     
     print("DB directory missing or incomplete.")
     
+    broken_interproscan_dir = db_path / "interproscan"
+    if broken_interproscan_dir.exists():
+        print(f"Removing incomplete InterProScan directory: {broken_interproscan_dir}")
+        try:
+            shutil.rmtree(broken_interproscan_dir)
+        except Exception as e:
+            print(f"Failed to remove incomplete InterProScan directory: {e}")
+            return False
+
     # 2. Check if tar.gz exists
     if not tar_path.exists():
         print(f"db.tar.gz not found at {tar_path}.")

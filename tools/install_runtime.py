@@ -22,6 +22,10 @@ from module.runtime_tools import (  # noqa: E402
     get_helper_root,
     resolve_java_executable,
 )
+from module.db_manager import setup_db, validate_interproscan_installation  # noqa: E402
+
+
+DEFAULT_INTERPROSCAN_DIR = ROOT_DIR / "db" / "interproscan"
 
 
 def shell_join(parts):
@@ -124,11 +128,11 @@ def build_runtime_shell_lines(*, java_bin, helper_root, config_path):
     return lines
 
 
-def write_interproscan_wrapper(wrapper_path, *, java_bin, helper_root, config_path):
+def write_interproscan_wrapper(wrapper_path, *, java_bin, helper_root, config_path, interproscan_script):
     lines = build_runtime_shell_lines(java_bin=java_bin, helper_root=helper_root, config_path=config_path)
     lines.extend(
         [
-            'exec "$SCRIPT_DIR/db/interproscan/interproscan.sh" "$@"',
+            f'exec "{interproscan_script}" "$@"',
             "",
         ]
     )
@@ -136,11 +140,14 @@ def write_interproscan_wrapper(wrapper_path, *, java_bin, helper_root, config_pa
     wrapper_path.chmod(0o755)
 
 
-def write_itak_wrapper(wrapper_path, *, java_bin, helper_root, config_path, python_bin):
+def write_itak_wrapper(wrapper_path, *, java_bin, helper_root, config_path, python_bin, interproscan_script=None):
     lines = build_runtime_shell_lines(java_bin=java_bin, helper_root=helper_root, config_path=config_path)
+    itak_exec = f'exec "{python_bin}" "$SCRIPT_DIR/itak"'
+    if interproscan_script is not None:
+        itak_exec += f' --interproscan "{interproscan_script}"'
     lines.extend(
         [
-            f'exec "{python_bin}" "$SCRIPT_DIR/itak3-v1.0.py" "$@"',
+            f'{itak_exec} "$@"',
             "",
         ]
     )
@@ -158,13 +165,25 @@ def install_python_packages(python_bin, *, with_predict, predict_backend, torch_
         run_command(cmd)
 
 
-def run_dependency_check(python_bin, *, config_path):
+def run_dependency_check(python_bin, *, config_path, interproscan_script=None):
     env = build_runtime_env(ROOT_DIR)
     env["INTERPROSCAN_CONF"] = str(config_path)
-    run_command([str(python_bin), str(ROOT_DIR / "itak3-v1.0.py"), "--check-deps"], env=env)
+    cmd = [str(python_bin), str(ROOT_DIR / "itak"), "--check-deps"]
+    if interproscan_script is not None:
+        cmd.extend(["--interproscan", str(interproscan_script)])
+    run_command(cmd, env=env)
 
 
-def run_smoke_test(python_bin, *, wrapper_path, config_path, input_fasta, appl_list, output_root):
+def run_smoke_test(
+    python_bin,
+    *,
+    wrapper_path,
+    config_path,
+    input_fasta,
+    appl_list,
+    output_root,
+    interproscan_script=None,
+):
     input_fasta = Path(input_fasta).resolve()
     if not input_fasta.exists():
         raise SystemExit(f"Smoke test input FASTA not found: {input_fasta}")
@@ -195,13 +214,14 @@ def run_smoke_test(python_bin, *, wrapper_path, config_path, input_fasta, appl_l
     run_command(
         [
             str(python_bin),
-            str(ROOT_DIR / "itak3-v1.0.py"),
+            str(ROOT_DIR / "itak"),
             "-i",
             str(input_fasta),
             "--appl",
             appl_list,
             "--output",
             str(itak_out),
+            *(["--interproscan", str(interproscan_script)] if interproscan_script is not None else []),
         ],
         env=env,
     )
@@ -231,19 +251,102 @@ def clean_runtime(*, interproscan_dir, venv_dir, remove_venv):
     return removed
 
 
+def print_interproscan_issues(issues):
+    for issue in issues:
+        print(f"    - {issue}")
+
+
+def confirm_bundled_db_repair(message, *, auto_download):
+    print(message)
+    if auto_download:
+        print("Auto-confirming bundled db preparation because --download-db was specified.")
+        return True
+
+    if not sys.stdin.isatty():
+        print("Cannot prompt in non-interactive mode.")
+        print("Re-run with --download-db to allow automatic bundled db preparation.")
+        return False
+
+    reply = input("Download and extract the bundled db/interproscan now? [y/N]: ").strip().lower()
+    return reply in {"y", "yes"}
+
+
+def ensure_usable_interproscan(interproscan_dir, *, auto_download):
+    interproscan_dir = Path(interproscan_dir).resolve()
+    default_dir = DEFAULT_INTERPROSCAN_DIR.resolve()
+    requested_is_default = interproscan_dir == default_dir
+
+    issues = validate_interproscan_installation(interproscan_dir)
+    if not issues:
+        return interproscan_dir
+
+    print(f"InterProScan installation check failed for: {interproscan_dir}")
+    print_interproscan_issues(issues)
+
+    if requested_is_default:
+        prompt_message = (
+            "The bundled InterProScan under db/interproscan is missing or incomplete.\n"
+            "iTAK can remove the broken bundled copy and prepare a fresh one from db.tar.gz."
+        )
+    else:
+        prompt_message = (
+            f"The specified --interproscan-dir is not usable: {interproscan_dir}\n"
+            f"iTAK can instead prepare the bundled copy under: {default_dir}"
+        )
+
+    if not confirm_bundled_db_repair(prompt_message, auto_download=auto_download):
+        print(
+            "A valid InterProScan installation is required. "
+            "Provide a working --interproscan-dir or re-run with --download-db."
+        )
+        raise SystemExit(1)
+
+    if not setup_db(ROOT_DIR):
+        print("Failed to prepare bundled db/interproscan from db.tar.gz.")
+        raise SystemExit(1)
+
+    repaired_issues = validate_interproscan_installation(default_dir)
+    if repaired_issues:
+        print("Bundled InterProScan is still incomplete after attempted repair:")
+        print_interproscan_issues(repaired_issues)
+        print("Bundled InterProScan repair failed.")
+        raise SystemExit(1)
+
+    print(f"Using bundled InterProScan: {default_dir}")
+    return default_dir
+
+
 def print_status(*, interproscan_dir, venv_dir):
     local_config = interproscan_dir / "interproscan.local.properties"
     interproscan_wrapper = ROOT_DIR / "run_interproscan_local.sh"
-    itak_wrapper = ROOT_DIR / "run_itak3_local.sh"
+    legacy_itak_wrapper = ROOT_DIR / "run_itak3_local.sh"
+    itak_entry = ROOT_DIR / "itak"
     properties = load_properties(local_config)
+    interproscan_issues = validate_interproscan_installation(interproscan_dir)
+    interproscan_ok = not interproscan_issues
 
-    installed = local_config.exists() and interproscan_wrapper.exists() and itak_wrapper.exists()
+    installed = (
+        local_config.exists()
+        and interproscan_wrapper.exists()
+        and itak_entry.exists()
+        and interproscan_ok
+    )
     print("Runtime status:")
     print(f"  Installed: {'yes' if installed else 'no'}")
+    print(f"  InterProScan dir: {interproscan_dir} ({'valid' if interproscan_ok else 'invalid'})")
     print(f"  Local config: {local_config} ({'present' if local_config.exists() else 'missing'})")
     print(f"  InterProScan wrapper: {interproscan_wrapper} ({'present' if interproscan_wrapper.exists() else 'missing'})")
-    print(f"  iTAK3 wrapper: {itak_wrapper} ({'present' if itak_wrapper.exists() else 'missing'})")
+    print(f"  iTAK entry script: {itak_entry} ({'present' if itak_entry.exists() else 'missing'})")
+    print(
+        f"  Deprecated compatibility wrapper: {legacy_itak_wrapper} "
+        f"({'present' if legacy_itak_wrapper.exists() else 'missing'})"
+    )
     print(f"  Selected venv path: {venv_dir} ({'present' if venv_dir.exists() else 'missing'})")
+    print("  Preferred CLI: ./itak")
+    print("  Compatibility note: do not script against run_itak3_local.sh in new setups")
+    if interproscan_issues:
+        print("  InterProScan issues:")
+        print_interproscan_issues(interproscan_issues)
 
     runtime_python = properties.get("python3.command")
     runtime_perl = properties.get("perl.command")
@@ -278,12 +381,14 @@ def build_parser():
             Examples:
               ./install_runtime.sh
               ./install_runtime.sh --status
+              ./install_runtime.sh --download-db
               ./install_runtime.sh --clean-runtime
               ./install_runtime.sh --with-predict
               ./install_runtime.sh --with-predict --predict-backend mps
               ./install_runtime.sh --with-predict --predict-backend cuda --torch-index-url https://download.pytorch.org/whl/cu121
               ./install_runtime.sh --smoke-test
               ./install_runtime.sh --no-venv --skip-pip
+              ./install_runtime.sh --interproscan-dir /path/to/interproscan
               ./install_runtime.sh --venv .venv-itak --torch-index-url https://download.pytorch.org/whl/cpu
             """
         ),
@@ -294,6 +399,11 @@ def build_parser():
     parser.add_argument("--status", action="store_true", help="Show current local runtime status and exit")
     parser.add_argument("--clean-runtime", action="store_true", help="Remove generated local runtime files and exit")
     parser.add_argument("--remove-venv", action="store_true", help="Also remove the selected venv when used with --clean-runtime")
+    parser.add_argument(
+        "--download-db",
+        action="store_true",
+        help="Automatically prepare the bundled db/interproscan when the requested InterProScan is missing or invalid",
+    )
     parser.add_argument("--skip-pip", action="store_true", help="Skip pip installation steps")
     parser.add_argument("--skip-check", action="store_true", help="Skip final dependency check")
     parser.add_argument("--with-predict", action="store_true", help="Also install PyTorch prediction dependencies")
@@ -342,22 +452,16 @@ def main():
     if not bootstrap_python.exists():
         raise SystemExit(f"Python interpreter not found: {bootstrap_python}")
 
-    interproscan_dir = Path(args.interproscan_dir).resolve()
-    if not interproscan_dir.exists():
-        raise SystemExit(f"InterProScan directory not found: {interproscan_dir}")
-
-    config_template = interproscan_dir / "interproscan.properties"
-    if not config_template.exists():
-        raise SystemExit(f"InterProScan properties file not found: {config_template}")
+    requested_interproscan_dir = Path(args.interproscan_dir).resolve()
 
     venv_dir = (ROOT_DIR / args.venv).resolve()
     if args.status:
-        print_status(interproscan_dir=interproscan_dir, venv_dir=venv_dir)
+        print_status(interproscan_dir=requested_interproscan_dir, venv_dir=venv_dir)
         return
 
     if args.clean_runtime:
         removed = clean_runtime(
-            interproscan_dir=interproscan_dir,
+            interproscan_dir=requested_interproscan_dir,
             venv_dir=venv_dir,
             remove_venv=(not args.no_venv and args.remove_venv),
         )
@@ -368,6 +472,14 @@ def main():
         else:
             print("No generated runtime artifacts were found.")
         return
+
+    interproscan_dir = ensure_usable_interproscan(
+        requested_interproscan_dir,
+        auto_download=args.download_db,
+    )
+    config_template = interproscan_dir / "interproscan.properties"
+    interproscan_script = interproscan_dir / "interproscan.sh"
+    using_bundled_interproscan = interproscan_dir.resolve() == DEFAULT_INTERPROSCAN_DIR.resolve()
 
     if args.no_venv:
         runtime_python = bootstrap_python
@@ -395,8 +507,13 @@ def main():
             torch_index_url=args.torch_index_url,
         )
 
-    activated, activation_message = activate_bundled_interproscan_binaries(ROOT_DIR, interproscan_dir)
-    print(activation_message)
+    if using_bundled_interproscan:
+        activated, activation_message = activate_bundled_interproscan_binaries(ROOT_DIR, interproscan_dir)
+        print(activation_message)
+        if not activated:
+            raise SystemExit(activation_message)
+    else:
+        print(f"Using external InterProScan installation: {interproscan_dir}")
 
     local_config = interproscan_dir / "interproscan.local.properties"
     write_local_interproscan_config(
@@ -409,25 +526,33 @@ def main():
     )
 
     wrapper_path = ROOT_DIR / "run_interproscan_local.sh"
-    write_interproscan_wrapper(wrapper_path, java_bin=java_bin, helper_root=helper_root, config_path=local_config)
+    write_interproscan_wrapper(
+        wrapper_path,
+        java_bin=java_bin,
+        helper_root=helper_root,
+        config_path=local_config,
+        interproscan_script=interproscan_script,
+    )
     legacy_wrapper_path = ROOT_DIR / "run_itak2_local.sh"
     if legacy_wrapper_path.exists() or legacy_wrapper_path.is_symlink():
         legacy_wrapper_path.unlink()
 
-    itak_wrapper_path = ROOT_DIR / "run_itak3_local.sh"
+    legacy_itak_wrapper_path = ROOT_DIR / "run_itak3_local.sh"
     write_itak_wrapper(
-        itak_wrapper_path,
+        legacy_itak_wrapper_path,
         java_bin=java_bin,
         helper_root=helper_root,
         config_path=local_config,
         python_bin=runtime_python,
+        interproscan_script=(interproscan_script if not using_bundled_interproscan else None),
     )
 
     print(f"Wrote local InterProScan config: {local_config}")
     print(f"Wrote runtime wrapper: {wrapper_path}")
-    print(f"Wrote iTAK wrapper: {itak_wrapper_path}")
+    print(f"Refreshed deprecated iTAK3 wrapper: {legacy_itak_wrapper_path}")
     print(f"Runtime Python: {runtime_python}")
     print(f"Java: {java_bin}")
+    print(f"Configured InterProScan script: {interproscan_script}")
     print(f"InterProScan bin directory: {configured_bin_dir}")
     print(f"Helper binary source: {helper_root}")
     print(f"InterProScan data directory: {data_dir}")
@@ -437,7 +562,11 @@ def main():
             print(f"PyTorch index URL: {args.torch_index_url}")
 
     if not args.skip_check:
-        run_dependency_check(runtime_python, config_path=local_config)
+        run_dependency_check(
+            runtime_python,
+            config_path=local_config,
+            interproscan_script=(interproscan_script if not using_bundled_interproscan else None),
+        )
 
     if args.smoke_test:
         run_smoke_test(
@@ -447,11 +576,19 @@ def main():
             input_fasta=args.smoke_test_input,
             appl_list=args.smoke_test_appl,
             output_root=Path(args.smoke_test_output).resolve(),
+            interproscan_script=(interproscan_script if not using_bundled_interproscan else None),
         )
 
     print("\nInstall completed.")
-    print(f"Use iTAK3 with: {shell_join([str(runtime_python), str(ROOT_DIR / 'itak3-v1.0.py'), '-i', 'input.fasta'])}")
-    print(f"Use iTAK3 wrapper with: {shell_join([str(itak_wrapper_path), '-i', 'input.fasta'])}")
+    print(f"Use iTAK with: {shell_join([str(ROOT_DIR / 'itak'), '-i', 'input.fasta'])}")
+    print("Preferred automation target: ./itak")
+    if not using_bundled_interproscan:
+        print(
+            "This runtime uses an external InterProScan. "
+            f"Add --interproscan {shlex.quote(str(interproscan_script))} to iTAK commands."
+        )
+    print(f"Deprecated compatibility wrapper remains available at: {shell_join([str(legacy_itak_wrapper_path), '-i', 'input.fasta'])}")
+    print("Do not rely on run_itak3_local.sh for new scripts or documentation.")
     print(f"Use InterProScan directly with: {shell_join([str(wrapper_path), '-i', 'input.fasta', '-f', 'json', '-d', 'output_dir'])}")
 
 

@@ -15,6 +15,12 @@
 - Added optional combined result summary output: `result/all_match_tbl.txt` in `--debug` mode.
 
 ### Changed
+- Promoted `itak` to the primary user-facing entrypoint and renamed the internal CLI orchestrator to `itak_cli.py`.
+- Kept `itak3-v1.0.py` and `run_itak3_local.sh` as deprecated compatibility shims while switching repository scripts and docs to `./itak`.
+- Marked both deprecated entrypoints for removal in the next breaking-change cleanup release.
+- Strengthened bundled InterProScan validation in both dependency checks and `install_runtime`, including top-level file/dir checks, dataset checks, and `interproscan.sh -version` self-test coverage.
+- Updated `install_runtime` so invalid `db/interproscan` or invalid `--interproscan-dir` inputs no longer hard-fail immediately; the installer can now diagnose the issues, prompt for bundled db repair, or auto-repair via `--download-db`.
+- Updated `install_runtime --status` to report invalid or missing InterProScan layouts without crashing, and to clearly mark `./itak` as the preferred CLI while leaving `run_itak3_local.sh` as compatibility-only.
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
 - Added `--skip-pk` to disable protein kinase analysis when needed.
 - Simplified protein kinase outputs to avoid duplicate files:
@@ -28,10 +34,17 @@
 - Enforced processed-FASTA validation so protein sequences containing `*` do not reach InterProScan.
 
 ### Verification
+- `./checkpoint_test.sh --suite quick`
+- `./checkpoint_test.sh --suite full`
+- `./checkpoint_test.sh --suite quick --label post_install_runtime`
+- `./checkpoint_test.sh --suite full --label final_regression`
 - `./smoke_test.sh --output output/smoke_test_regression_default`
+- `./smoke_test.sh --output output/smoke_test_post_install_runtime`
 - `./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_regression_pk`
 - `./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_predict_pk_recheck`
-- `./run_itak3_local.sh -i test_protein_kinase.fasta --appl PROSITEPROFILES --debug -o output/pk_debug_json`
+- `./itak -i test_protein_kinase.fasta --appl PROSITEPROFILES --debug -o output/pk_debug_json`
+- `python3 tools/install_runtime.py --status`
+- `python3 tools/install_runtime.py --status --interproscan-dir /tmp/itak_missing_interproscan`
 
 ### Relevant commits
 - `2e10ea3` Add protein kinase classification workflow

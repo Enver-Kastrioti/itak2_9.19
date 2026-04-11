@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""User-facing iTAK entrypoint."""
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+try:
+    from module.runtime_tools import build_runtime_env
+except ImportError:
+    build_runtime_env = None
+
+
+def reexec_local_venv():
+    script_dir = Path(__file__).resolve().parent
+    venv_dir = script_dir / ".venv"
+    venv_python = script_dir / ".venv" / "bin" / "python"
+    if os.environ.get("ITAK_SKIP_LOCAL_VENV") == "1":
+        return
+    if not venv_python.exists() or not venv_python.is_file():
+        return
+
+    current_prefix = Path(sys.prefix).resolve()
+    if current_prefix == venv_dir.resolve():
+        return
+
+    os.environ["ITAK_SKIP_LOCAL_VENV"] = "1"
+    os.execv(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+
+def configure_local_runtime():
+    script_dir = Path(__file__).resolve().parent
+    if build_runtime_env is not None:
+        runtime_env = build_runtime_env(script_dir)
+        for key, value in runtime_env.items():
+            if os.environ.get(key) != value:
+                os.environ[key] = value
+
+    local_config = ensure_local_interproscan_config(script_dir)
+    if local_config.exists():
+        os.environ.setdefault("INTERPROSCAN_CONF", str(local_config))
+
+
+def load_properties(path):
+    properties = {}
+    if not path.exists():
+        return properties
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        properties[key.strip()] = value.strip()
+    return properties
+
+
+def update_property_line(line, replacements):
+    for key, value in replacements.items():
+        prefix = f"{key}="
+        if line.startswith(prefix):
+            return prefix + value
+    return line
+
+
+def ensure_local_interproscan_config(script_dir):
+    interproscan_dir = script_dir / "db" / "interproscan"
+    template_path = interproscan_dir / "interproscan.properties"
+    local_config = interproscan_dir / "interproscan.local.properties"
+
+    if not template_path.exists():
+        return local_config
+
+    replacements = {
+        "bin.directory": str(interproscan_dir / "bin"),
+        "data.directory": str(interproscan_dir / "data"),
+        "python3.command": sys.executable,
+        "perl.command": shutil.which("perl") or "perl",
+    }
+
+    rewrite_config = not local_config.exists()
+    if not rewrite_config:
+        existing = load_properties(local_config)
+        for key, expected_value in replacements.items():
+            current_value = existing.get(key)
+            if current_value != expected_value:
+                rewrite_config = True
+                if key != "python3.command":
+                    break
+                if not current_value or not Path(current_value).exists():
+                    break
+
+    if rewrite_config:
+        lines = template_path.read_text(encoding="utf-8").splitlines()
+        rendered = [update_property_line(line, replacements) for line in lines]
+        local_config.write_text("\n".join(rendered) + "\n", encoding="utf-8")
+
+    return local_config
+
+
+if __name__ == "__main__":
+    reexec_local_venv()
+    configure_local_runtime()
+    from itak_cli import main
+
+    main()

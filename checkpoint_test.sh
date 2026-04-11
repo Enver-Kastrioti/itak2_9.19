@@ -74,6 +74,17 @@ fi
 
 mkdir -p "$OUTPUT_ROOT"
 
+ITAK_CMD=()
+if [[ -x "$ROOT_DIR/itak" ]]; then
+  ITAK_CMD=("$ROOT_DIR/itak")
+elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+  ITAK_CMD=("$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/itak")
+elif [[ -x "$ROOT_DIR/run_itak3_local.sh" ]]; then
+  ITAK_CMD=("$ROOT_DIR/run_itak3_local.sh")
+else
+  ITAK_CMD=("python3" "$ROOT_DIR/itak")
+fi
+
 run_step() {
   local name="$1"
   shift
@@ -94,6 +105,8 @@ check_file() {
 }
 
 run_step "Syntax Check" python -m py_compile \
+  "$ROOT_DIR/itak" \
+  "$ROOT_DIR/itak_cli.py" \
   "$ROOT_DIR/itak3-v1.0.py" \
   "$ROOT_DIR/module/check_dependencies.py" \
   "$ROOT_DIR/module/protein_kinase.py" \
@@ -123,7 +136,7 @@ if [[ "$SUITE" == "full" ]]; then
     --output "$OUTPUT_ROOT/predict_pk_positive"
 
   run_step "Predict PK Positive Without TF" \
-    "$ROOT_DIR/run_itak3_local.sh" \
+    "${ITAK_CMD[@]}" \
     --predict \
     -t 0.3 \
     -i "$ROOT_DIR/test_pk_no_tf_candidate.fasta" \
@@ -145,7 +158,7 @@ if [[ "$SUITE" == "full" ]]; then
   fi
 
   run_step "List Predict PK Contract" \
-    "$ROOT_DIR/run_itak3_local.sh" \
+    "${ITAK_CMD[@]}" \
     --list-predict \
     -i "$ROOT_DIR/test_pk_no_tf_candidate.fasta" \
     --appl "$APPL_LIST" \
@@ -178,7 +191,7 @@ if [[ "$SUITE" == "full" ]]; then
   fi
 
   run_step "Debug PK Positive" \
-    "$ROOT_DIR/run_itak3_local.sh" \
+    "${ITAK_CMD[@]}" \
     -i "$ROOT_DIR/test_protein_kinase.fasta" \
     --appl "$APPL_LIST" \
     --debug \

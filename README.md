@@ -41,13 +41,17 @@ External tools:
 Project Layout
 --------
 ## Key Scripts
-- `itak3-v1.0.py`: main CLI entry point (analysis / prediction / Grad-CAM orchestration)
+- `itak`: user-facing CLI entry point
+- `itak_cli.py`: internal CLI orchestrator (analysis / prediction / Grad-CAM orchestration)
+- `itak3-v1.0.py`: temporary compatibility shim for older invocations
 - `pre_model/predict.py`: deep-learning preclassification (+ Grad-CAM heatmaps)
 - `module/`: pipeline modules (FASTA processing, IPR JSON parsing, hmmscan processing, classification, checks)
 - `rule.txt`: TF family classification rules
 
 ```text
 itak3/
+├── itak
+├── itak_cli.py
 ├── itak3-v1.0.py
 ├── module/
 │   ├── check_dependencies.py
@@ -86,10 +90,22 @@ Installation
 ./install_runtime.sh
 ```
 
+Primary entrypoint after installation:
+```bash
+./itak
+```
+
+Compatibility note:
+- `run_itak3_local.sh` is kept only as a deprecated compatibility wrapper.
+- New commands, automation, and documentation should call `./itak` directly.
+
 Optional:
 ```bash
 # inspect current local runtime status
 ./install_runtime.sh --status
+
+# automatically repair or prepare bundled db/interproscan when missing or broken
+./install_runtime.sh --download-db
 
 # remove generated runtime files
 ./install_runtime.sh --clean-runtime
@@ -120,6 +136,9 @@ Optional:
 
 # install into the current Python without creating .venv
 ./install_runtime.sh --no-venv
+
+# configure against an existing external InterProScan installation
+./install_runtime.sh --interproscan-dir /path/to/interproscan
 ```
 
 This installer will:
@@ -127,10 +146,16 @@ This installer will:
 - install required Python packages
 - generate `db/interproscan/interproscan.local.properties`
 - generate `run_interproscan_local.sh`
-- generate `run_itak3_local.sh`
+- refresh deprecated compatibility wrapper `run_itak3_local.sh`
 - configure the bundled InterProScan to use the platform helper binaries under `bin/`
-- run `python itak3-v1.0.py --check-deps`
+- run `./itak --check-deps`
 - optionally run a post-install smoke test through both InterProScan and the main iTAK3 workflow
+- prompt to repair missing or incomplete `db/interproscan` installations, or auto-repair them with `--download-db`
+
+If you configure the runtime against an external InterProScan directory, repository-local iTAK commands should still pass the script explicitly:
+```bash
+./itak --interproscan /path/to/interproscan.sh -i input.fasta
+```
 
 Generated runtime files can be removed with:
 ```bash
@@ -178,12 +203,38 @@ git clone https://github.com/Enver-Kastrioti/itak2_9.19.git
 Usage
 --------
 
+## Entry point
+- Installed or repository-local usage should go through `itak`.
+- In a cloned repository, invoke it as `./itak`.
+- `itak3-v1.0.py` and `run_itak3_local.sh` remain only as temporary compatibility shims.
+
 ## Syntax
 ```bash
-python itak3-v1.0.py [options] -i <input_file>
+itak [options] -i <input_file>
 ```
 
+Repository-local invocation after cloning the repo:
+```bash
+./itak [options] -i <input_file>
+```
+
+Deprecated compatibility entrypoints:
+- `itak3-v1.0.py`
+- `run_itak3_local.sh`
+- Both still forward to `itak`, but new usage should call `./itak` directly.
+
+Migration notes:
+- Replace `python itak3-v1.0.py ...` with `./itak ...`
+- Replace `./run_itak3_local.sh ...` with `./itak ...`
+- Use `./itak --version` to inspect the CLI version instead of relying on a versioned filename
+
+Removal plan:
+- `itak3-v1.0.py` and `run_itak3_local.sh` are slated for removal in the next breaking-change cleanup release.
+- Before removing them, keep all examples, automation, and local notes on `./itak`.
+- New scripts and documentation should not introduce fresh references to the deprecated entrypoints.
+
 ## Primary arguments
+- `--version`: Show the CLI version and exit
 - `-i, --input`: Input FASTA file path (required except with --check-deps)
 - `-o, --output`: Output directory path (optional; default: output/<input_basename>/)
 - `-t, --threshold`: Prediction threshold in [0,1] (default: 0.1; affects prediction only)
@@ -213,42 +264,42 @@ Examples
 --------
 
 1. Basic analysis (analyze input directly):
-   python itak3-v1.0.py -i test_protein.fasta
+   itak -i test_protein.fasta
 
 2. Prediction workflow:
-   python itak3-v1.0.py --predict -i test_protein.fasta -t 0.1
+   itak --predict -i test_protein.fasta -t 0.1
 
 3. Specify an output directory:
-   python itak3-v1.0.py --predict -i test_protein.fasta -o /path/to/output
+   itak --predict -i test_protein.fasta -o /path/to/output
 
 4. Enable debug mode:
-   python itak3-v1.0.py --predict -i test_protein.fasta --debug
+   itak --predict -i test_protein.fasta --debug
 
 5. Restrict InterProScan applications:
-   python itak3-v1.0.py -i test_protein.fasta --appl CDD,Pfam,SMART
+   itak -i test_protein.fasta --appl CDD,Pfam,SMART
 
 6. Test mode:
-   python itak3-v1.0.py -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
+   itak -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
 
 7. Check dependencies:
-   python itak3-v1.0.py --check-deps
+   itak --check-deps
 
 8. Use supplementary models (requires --predict):
-   python itak3-v1.0.py --predict --use-supplementary -i input.fasta
-   python itak3-v1.0.py --predict --supplementary-only -i input.fasta
-   python itak3-v1.0.py --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
+   itak --predict --use-supplementary -i input.fasta
+   itak --predict --supplementary-only -i input.fasta
+   itak --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
 
 9. Grad-CAM heatmaps (requires --predict):
    - fast: runs after classification, using the classified TF FASTA under result/ (batch mode)
    - all: runs on the original input FASTA (all sequences)
-   python itak3-v1.0.py --predict --grad-cam-mode fast -i input.fasta
-   python itak3-v1.0.py --predict --grad-cam-mode all -i input.fasta
+   itak --predict --grad-cam-mode fast -i input.fasta
+   itak --predict --grad-cam-mode all -i input.fasta
 
 10. Skip protein kinase analysis:
-   python itak3-v1.0.py -i test_protein.fasta --skip-pk
+   itak -i test_protein.fasta --skip-pk
 
 11. Run a positive protein kinase example:
-   python itak3-v1.0.py -i test_protein_kinase.fasta --skip-deps-check
+   itak -i test_protein_kinase.fasta --skip-deps-check
 
 12. Run a positive protein kinase smoke test:
    ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
@@ -257,7 +308,7 @@ Examples
    ./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
 
 14. Run list-predict mode with shared protein kinase analysis across thresholds:
-   python itak3-v1.0.py --list-predict -i test_pk_no_tf_candidate.fasta -o /path/to/list_predict_out
+   itak --list-predict -i test_pk_no_tf_candidate.fasta -o /path/to/list_predict_out
 
 Outputs
 --------
@@ -308,21 +359,21 @@ FAQ / Troubleshooting
 --------
 
 1) db download / preparation failed (timeout / network error)
-   - Download `db.tar.gz` manually, then place it in the project root (same directory as `itak3-v1.0.py`).
+   - Download `db.tar.gz` manually, then place it in the project root (same directory as `itak` and `itak_cli.py`).
    - Re-run the program (it will try to extract / prepare db assets automatically), or extract manually:
      ```bash
      tar -xzf db.tar.gz
      ```
    - If you already have a working InterProScan, prefer using it directly:
      ```bash
-     python itak3-v1.0.py -i input.fasta --interproscan /path/to/interproscan.sh
+     itak -i input.fasta --interproscan /path/to/interproscan.sh
      ```
 
 2) "Dependency checks failed"
    - Ensure Python packages are installed and `java` / `hmmscan` are available on PATH.
    - Run:
      ```bash
-     python itak3-v1.0.py --check-deps
+     itak --check-deps
      ```
 
 3) "FASTA validation failed"
