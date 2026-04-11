@@ -120,21 +120,11 @@ pixi run checkpoint-quick
 
 `pixi run configure-runtime` will:
 - generate `db/interproscan/interproscan.local.properties`
-- validate the InterProScan engine layout separately from the iTAK-managed data layout
-- configure the selected engine to use the iTAK-managed `db/interproscan/data`
+- validate the bundled InterProScan engine layout together with the iTAK-managed data layout
+- configure the bundled `db/interproscan` runtime
 - activate iTAK helper binaries on macOS when required
 - run a minimal `interproscan.sh -version` self-test
 - record the Python and Perl executables from the current pixi environment
-
-You can configure against an external engine while still forcing iTAK to use its own slimmed data:
-```bash
-pixi run configure-runtime -- --engine-dir /path/to/interproscan
-```
-
-Repository-local analysis with an explicitly provided external engine still uses the `itak` entrypoint:
-```bash
-./itak --interproscan /path/to/interproscan.sh -i input.fasta
-```
 
 ## Alternative setup: existing Python / conda / bioconda environment
 If you already created an environment yourself, install the Python packages there and run the runtime configurator explicitly.
@@ -162,19 +152,14 @@ python3 tools/configure_interproscan_runtime.py --status
 python3 tools/configure_interproscan_runtime.py --check
 ```
 
-External engine example:
-```bash
-python3 tools/configure_interproscan_runtime.py --engine-dir /path/to/interproscan
-```
-
 ## Deprecated bootstrap script
 - `install_runtime.sh` is retired and now exits with a migration message.
 - `tools/install_runtime.py` has been removed from the recommended workflow; use `pixi` or `tools/configure_interproscan_runtime.py` instead.
 
 ## InterProScan Database (db/)
 - iTAK does not use the official full InterProScan data package.
-- `db/interproscan/data` is an iTAK-managed slimmed dataset for TF/TR/PK workflows and must remain under iTAK control.
-- If you use an external InterProScan engine via `--interproscan /path/to/interproscan.sh`, keep using the iTAK-managed data directory.
+- `db/interproscan/` is an iTAK-managed bundled runtime for TF/TR/PK workflows.
+- Users should not point iTAK at an external InterProScan installation.
 
 ## Protein kinase database (`db/itak3_pk`)
 - iTAK3 bundles a reduced protein kinase HMM database under `db/itak3_pk/`.
@@ -223,7 +208,6 @@ Feature options:
 - --supp-models           Optional: specify supplementary model files (multiple allowed); if omitted, use all models in the directory
 - --grad-cam-mode         Grad-CAM mode: none (default)/fast/all/positive (all/positive require --predict; --list-predict still unsupported)
 - --appl                  InterProScan application list (comma-separated; defaults to common libraries)
-- --interproscan          Path to an external interproscan.sh (hmmscan will follow that InterProScan)
 - --skip-pk               Skip protein kinase identification/classification
 - --debug                 Enable debug outputs (default: off)
 
@@ -335,10 +319,6 @@ FAQ / Troubleshooting
      ```bash
      tar -xzf db.tar.gz
      ```
-   - If you already have a working InterProScan, prefer using it directly:
-     ```bash
-     itak -i input.fasta --interproscan /path/to/interproscan.sh
-     ```
 
 2) "Dependency checks failed"
    - Ensure Python packages are installed and `java` / `hmmscan` are available on PATH.
@@ -352,7 +332,7 @@ FAQ / Troubleshooting
    - Remove `*` (stop codon) and unexpected characters.
 
 4) "InterProScan failed"
-   - Check `java -version`, disk space, and InterProScan path (`--interproscan` if needed).
+   - Check `java -version`, disk space, and the integrity of `db/interproscan/`.
 
 5) "Prediction is unavailable" / Grad-CAM not working
    - Install PyTorch and ensure `pre_model/model.pth` and `pre_model/predict.py` exist.

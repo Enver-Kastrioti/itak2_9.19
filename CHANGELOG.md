@@ -25,6 +25,7 @@
 - Added an initial `pixi.toml` with explicit tasks for runtime configuration, runtime status checks, dependency checks, smoke tests, and `itak`.
 - Retired `install_runtime.sh`; it now exits with migration guidance instead of bootstrapping a `.venv`.
 - Removed `tools/install_runtime.py` from the main setup workflow; explicit runtime configuration now goes through `pixi` tasks or `tools/configure_interproscan_runtime.py`.
+- Removed support for user-specified external InterProScan paths; iTAK now always uses the bundled `db/interproscan` runtime.
 - Extended `pre_model/predict.py` with explicit `--device` selection and optional batch-progress reporting via `--progress-every`, while preserving the default automatic device choice.
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
 - Added `--skip-pk` to disable protein kinase analysis when needed.

@@ -32,7 +32,7 @@ from module.runtime_tools import (  # noqa: E402
 
 
 DEFAULT_ENGINE_DIR = ROOT_DIR / "db" / "interproscan"
-DEFAULT_DATA_DIR = ROOT_DIR / "db" / "interproscan" / "data"
+DEFAULT_DATA_DIR = DEFAULT_ENGINE_DIR / "data"
 DEFAULT_MANIFEST = ROOT_DIR / "runtime" / "interproscan_manifest.json"
 DEFAULT_LOCAL_CONFIG = "interproscan.local.properties"
 VERSION_PATTERN = re.compile(r"(\d+\.\d+(?:-\d+\.\d+)?)")
@@ -349,17 +349,7 @@ def print_status_report(
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Validate and configure an InterProScan runtime for iTAK without creating a .venv.",
-    )
-    parser.add_argument(
-        "--engine-dir",
-        default=str(DEFAULT_ENGINE_DIR),
-        help="InterProScan engine directory that contains interproscan.sh",
-    )
-    parser.add_argument(
-        "--data-dir",
-        default=str(DEFAULT_DATA_DIR),
-        help="iTAK-managed InterProScan data directory to use",
+        description="Validate and configure the bundled iTAK InterProScan runtime without creating a .venv.",
     )
     parser.add_argument(
         "--manifest",
@@ -400,10 +390,18 @@ def build_parser():
 
 
 def main():
+    deprecated_args = {"--engine-dir", "--data-dir"}
+    used_deprecated = sorted(arg for arg in deprecated_args if arg in sys.argv)
+    if used_deprecated:
+        joined = ", ".join(used_deprecated)
+        raise SystemExit(
+            f"{joined} is no longer supported. iTAK now always configures the bundled db/interproscan runtime."
+        )
+
     args = build_parser().parse_args()
 
-    engine_dir = Path(args.engine_dir).resolve()
-    data_dir = Path(args.data_dir).resolve()
+    engine_dir = DEFAULT_ENGINE_DIR.resolve()
+    data_dir = DEFAULT_DATA_DIR.resolve()
     manifest_path = Path(args.manifest).resolve()
     local_config_path = engine_dir / DEFAULT_LOCAL_CONFIG
     helper_root = get_helper_root(ROOT_DIR)

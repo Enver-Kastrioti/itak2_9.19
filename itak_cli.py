@@ -1213,16 +1213,14 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
 
 def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=None):
     try:
-        if not interproscan_path and not ensure_db_extracted():
+        _ = interproscan_path
+        if not ensure_db_extracted():
             raise PipelineStageError("InterProScan", "db directory is not available")
 
         ipr_output_dir = Path(output_dir) / "InterproScan"
         ipr_output_dir.mkdir(exist_ok=True)
 
-        if interproscan_path:
-             interproscan_script = str(interproscan_path)
-        else:
-             interproscan_script = str(INTERPROSCAN_SCRIPT)
+        interproscan_script = str(INTERPROSCAN_SCRIPT)
 
         if (
             activate_bundled_interproscan_binaries is not None
@@ -1261,7 +1259,8 @@ def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=N
 # Run hmmscan
 def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
     try:
-        if not interproscan_path and not ensure_db_extracted():
+        _ = interproscan_path
+        if not ensure_db_extracted():
             raise PipelineStageError("hmmscan", "db directory is not available")
 
         hmm_db = SCRIPT_DIR / "hmm" / "self_build.hmm"
@@ -1277,29 +1276,6 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
             if helper_hmmscan is not None:
                 hmmscan_executable = str(helper_hmmscan)
                 print(f"Using platform helper hmmscan: {hmmscan_executable}")
-
-        if interproscan_path:
-            interpro_dir = Path(interproscan_path).parent
-            candidates = [
-                interpro_dir / "bin" / "hmmer" / "hmmer3" / "hmmscan",
-                interpro_dir / "bin" / "hmmer" / "hmmscan",
-                interpro_dir / "bin" / "hmmscan",
-            ]
-            hmmer3_dir = interpro_dir / "bin" / "hmmer" / "hmmer3"
-            if hmmer3_dir.exists():
-                candidates.extend(hmmer3_dir.rglob("hmmscan"))
-            bin_dir = interpro_dir / "bin"
-            if bin_dir.exists():
-                candidates.extend(bin_dir.rglob("hmmscan"))
-
-            for candidate in candidates:
-                if candidate.exists() and os.access(candidate, os.X_OK) and candidate.is_file():
-                    hmmscan_executable = str(candidate)
-                    print(f"Using bundled hmmscan from custom InterProScan: {hmmscan_executable}")
-                    break
-            if not hmmscan_executable and shutil.which("hmmscan"):
-                hmmscan_executable = "hmmscan"
-                print("Using system hmmscan")
 
         if not hmmscan_executable:
             internal_hmmscan = DB_DIR / "interproscan" / "bin" / "hmmer" / "hmmer3" / "hmmscan"
@@ -1919,6 +1895,10 @@ def validate_threshold(value):
 # ============================================================================
 
 def main():
+    if "--interproscan" in sys.argv:
+        print("Error: --interproscan is no longer supported. iTAK now always uses db/interproscan.")
+        sys.exit(2)
+
     parser = argparse.ArgumentParser(
         prog="itak",
         description="iTAK3 - transcription factor prediction and analysis tool",
@@ -1958,13 +1938,10 @@ Example usage:
   # 10) Test mode: skip InterProScan/hmmscan and validate classification using existing files
   itak -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
   
-  # 11) Use an external interproscan.sh (hmmscan will follow the specified InterProScan)
-  itak -i input.fasta --interproscan /path/to/interproscan.sh
-  
-  # 12) Check dependencies and exit
+  # 11) Check dependencies and exit
   itak --check-deps
 
-  # 13) Show CLI version
+  # 12) Show CLI version
   itak --version
         """
     )
@@ -1997,8 +1974,6 @@ Example usage:
                        default='CDD,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART',
                        help='InterProScan application list (comma-separated). Allowed: CDD,NCBIfam,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART')
     
-    # External InterProScan path
-    parser.add_argument('--interproscan', help='Path to interproscan.sh (hmmscan will follow the specified InterProScan)')
     parser.add_argument('--skip-pk', action='store_true',
                        help='Skip protein kinase identification/classification (enabled by default in direct/predict modes)')
 
@@ -2047,7 +2022,7 @@ Example usage:
     # Check dependencies and exit
     if args.check_deps:
         if DependencyChecker:
-            checker = DependencyChecker(interproscan_path=args.interproscan)
+            checker = DependencyChecker()
             success = checker.run_full_check()
             sys.exit(0 if success else 1)
         else:
@@ -2057,7 +2032,7 @@ Example usage:
     # Run dependency checks (unless explicitly skipped)
     if not args.skip_deps_check and DependencyChecker:
         print(" Checking runtime dependencies...")
-        checker = DependencyChecker(interproscan_path=args.interproscan)
+        checker = DependencyChecker()
         
         # Decide whether to check prediction dependencies
         check_predict = args.predict or args.list_predict
@@ -2069,7 +2044,7 @@ Example usage:
         
         # If db assets are missing, run_full_check attempts a download/extraction.
         
-        if not dependencies_ok and not args.test_mode and not args.interproscan:
+        if not dependencies_ok and not args.test_mode:
             # Re-check db readiness in case it was prepared during the previous run
             if checker.ensure_db_extracted():
                  print("\n[INFO] db assets are ready; re-checking all dependencies...")
@@ -2227,7 +2202,7 @@ Example usage:
         print("Using List Predict mode (predict once, classify under multiple thresholds)")
 
         if DependencyChecker:
-            checker = DependencyChecker(interproscan_path=args.interproscan)
+            checker = DependencyChecker()
             prediction_ok, error_msg = checker.check_prediction_dependencies()
             if not prediction_ok:
                 print(f"\n[ERROR] Prediction dependency checks failed: {error_msg}")
@@ -2247,7 +2222,7 @@ Example usage:
             score_threshold=args.score,
             classification_mode=args.classification_mode,
             predict_mode=args.predict_mode,
-            interproscan_path=args.interproscan,
+            interproscan_path=None,
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
             supp_models=args.supp_models,
@@ -2259,7 +2234,7 @@ Example usage:
         
         # Check prediction dependencies
         if DependencyChecker:
-            checker = DependencyChecker(interproscan_path=args.interproscan)
+            checker = DependencyChecker()
             prediction_ok, error_msg = checker.check_prediction_dependencies()
             
             if not prediction_ok:
@@ -2295,7 +2270,7 @@ Example usage:
             classification_mode=args.classification_mode,
             predict_mode=args.predict_mode,
             grad_cam_mode=args.grad_cam_mode,
-            interproscan_path=args.interproscan,
+            interproscan_path=None,
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
             supp_models=args.supp_models,
@@ -2309,7 +2284,7 @@ Example usage:
         if args.grad_cam_mode != 'none':
             print(f"Note: Grad-CAM is enabled (mode: {args.grad_cam_mode}); the model will be executed to generate heatmaps")
             if DependencyChecker:
-                checker = DependencyChecker(interproscan_path=args.interproscan)
+                checker = DependencyChecker()
                 prediction_ok, error_msg = checker.check_prediction_dependencies()
                 
                 if not prediction_ok:
@@ -2324,7 +2299,7 @@ Example usage:
             debug=args.debug,
             score_threshold=args.score,
             classification_mode=args.classification_mode,
-            interproscan_path=args.interproscan,
+            interproscan_path=None,
             run_protein_kinase_analysis=not args.skip_pk,
         )
         

@@ -26,7 +26,7 @@ Reason:
 Implication:
 
 - `data.directory` must always point to the iTAK-managed database
-- external or system-provided InterProScan installations may provide the engine only, not the data payload used by iTAK
+- users should not point iTAK to an external or system-provided InterProScan installation
 
 
 ### 2. macOS requires iTAK-managed helper binaries
@@ -57,10 +57,10 @@ The InterProScan program itself:
 - jars
 - engine-side support files
 
-This layer may come from:
+This layer is currently project-owned and bundled under:
 
-- Linux: `conda`, `bioconda`, `pixi`, or a user-provided installation
-- macOS: user-provided installation, plus iTAK helper activation
+- `db/interproscan`
+- future versioned iTAK runtime bundles
 
 
 ### Data
@@ -89,14 +89,14 @@ This layer is managed by iTAK:
 
 Preferred model:
 
-- engine from `pixi` / `conda` / `bioconda`
-- data from iTAK-managed `db`
+- bundled iTAK engine from `db/interproscan`
+- bundled iTAK data from `db/interproscan/data`
 - helper overrides optional, only if needed
 
 Operationally:
 
-- detect engine path
 - generate `interproscan.local.properties`
+- use the bundled engine path
 - force `data.directory` to iTAK data
 - run with system or environment-provided Java/HMMER as declared by the environment
 
@@ -105,15 +105,14 @@ Operationally:
 
 Preferred model:
 
-- engine from a user-provided InterProScan installation
-- data from iTAK-managed `db`
+- bundled iTAK engine from `db/interproscan`
+- bundled iTAK data from `db/interproscan/data`
 - helper binaries from iTAK-managed `bin/osx`
 
 Operationally:
 
-- detect or require a user-supplied `interproscan.sh`
 - validate engine version against an explicit supported list
-- activate iTAK macOS helper binaries into the chosen engine layout
+- activate iTAK macOS helper binaries into the bundled engine layout
 - generate `interproscan.local.properties`
 - force `data.directory` to iTAK data
 
@@ -178,11 +177,11 @@ This manifest should drive:
 - `java`
 - `hmmer`
 - Python package dependencies
-- Linux-side engine installation, when available and appropriate
 
 
 ### pixi should not manage
 
+- InterProScan engine selection
 - iTAK slimmed InterProScan data versioning
 - macOS helper binaries
 - iTAK runtime compatibility policy
@@ -196,7 +195,7 @@ Preferred packaging posture:
 
 - install CLI entrypoint `itak`
 - install Python dependencies
-- install Java/HMMER/possibly Linux engine dependencies
+- install Java/HMMER dependencies
 - keep iTAK data and helper compatibility under project control
 
 The future `bioconda` package should not:
@@ -277,7 +276,7 @@ The `itak` launcher should eventually stop assuming `.venv` is the preferred glo
 ### Phase 4: Prepare bioconda packaging
 
 - move dependency declarations into package metadata
-- ensure `itak` runs correctly inside a managed external environment
+- ensure `itak` runs correctly inside a managed external Python environment
 - keep db/helper policy under iTAK control
 
 
@@ -295,8 +294,7 @@ The `itak` launcher should eventually stop assuming `.venv` is the preferred glo
 ## Decision Summary
 
 - iTAK data stays project-owned and versioned by iTAK.
+- iTAK bundled InterProScan engine stays project-owned and selected by iTAK.
 - macOS helper binaries stay project-owned and versioned by iTAK.
-- Linux may use external engine packages, but not external data.
-- macOS may use external engine installations, but only with iTAK helper activation and version checks.
 - `pixi` is the right direction for repository environment management.
 - `bioconda` remains the right long-term distribution target.

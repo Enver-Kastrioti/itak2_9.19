@@ -41,7 +41,11 @@ class DependencyChecker:
         self.missing_dependencies = []
         self.missing_optional_dependencies = []
         self.warnings = []
-        self.interproscan_path = Path(interproscan_path) if interproscan_path else None
+        self.interproscan_path = None
+        if interproscan_path:
+            self.warnings.append(
+                "External InterProScan paths are no longer supported; iTAK always uses db/interproscan"
+            )
         
         # Required Python packages (needed for core functionality)
         self.required_python_packages = {
@@ -86,7 +90,7 @@ class DependencyChecker:
         self.db_archive = self.script_dir / "db.tar.gz"
         
         self.required_files = {
-            'interproscan.sh': self.interproscan_path if self.interproscan_path else self.script_dir / "db" / "interproscan" / "interproscan.sh",
+            'interproscan.sh': self.script_dir / "db" / "interproscan" / "interproscan.sh",
             'self_build.hmm': self.script_dir / "hmm" / "self_build.hmm",
             'predict.py': self.script_dir / "pre_model" / "predict.py",
             'model.pth': self.script_dir / "pre_model" / "model.pth"
@@ -177,33 +181,6 @@ class DependencyChecker:
             helper_hmmscan = resolve_helper_executable(self.script_dir, "hmmer3", "hmmscan")
         if helper_hmmscan is not None:
             return True, f"Using platform helper hmmscan: {helper_hmmscan}"
-
-        # 0) If an external InterProScan path is provided, prioritize its bundled hmmscan
-        if self.interproscan_path:
-            interpro_dir = self.interproscan_path.parent
-            hmmscan_candidates = []
-            # Common path: bin/hmmer/hmmer3/hmmscan
-            hmmscan_candidates.append(interpro_dir / "bin" / "hmmer" / "hmmer3" / "hmmscan")
-            # Common variant: bin/hmmer/hmmscan
-            hmmscan_candidates.append(interpro_dir / "bin" / "hmmer" / "hmmscan")
-            # Common variant: bin/hmmscan
-            hmmscan_candidates.append(interpro_dir / "bin" / "hmmscan")
-            # Search within hmmer3 directory (fallback)
-            hmmer3_dir = interpro_dir / "bin" / "hmmer" / "hmmer3"
-            if hmmer3_dir.exists():
-                for path in hmmer3_dir.rglob("hmmscan"):
-                    hmmscan_candidates.append(path)
-            # Search within bin directory (final fallback)
-            bin_dir = interpro_dir / "bin"
-            if bin_dir.exists():
-                for path in bin_dir.rglob("hmmscan"):
-                    hmmscan_candidates.append(path)
-            for cand in hmmscan_candidates:
-                try:
-                    if cand.exists() and os.access(cand, os.X_OK) and cand.is_file():
-                        return True, f"Using bundled hmmscan from custom InterProScan: {cand}"
-                except Exception:
-                    pass
         
         # 1) Check bundled hmmscan
         internal_hmmscan = self.db_dir / "interproscan" / "bin" / "hmmer" / "hmmer3" / "hmmscan"
@@ -327,40 +304,6 @@ class DependencyChecker:
         return True, version_line
     
     def check_interproscan_setup(self):
-        # If an external InterProScan path is specified, validate that installation
-        if self.interproscan_path:
-            if not self.interproscan_path.exists():
-                return False
-                
-            if not os.access(self.interproscan_path, os.X_OK):
-                self.warnings.append(f"Specified InterProScan script is not executable: {self.interproscan_path}")
-                return False
-                
-            interproscan_dir = self.interproscan_path.parent
-            if not self.check_interproscan_layout(interproscan_dir):
-                return False
-
-            if (
-                activate_bundled_interproscan_binaries is not None
-                and interproscan_dir.resolve() == (self.script_dir / "db" / "interproscan").resolve()
-            ):
-                activated, activation_msg = activate_bundled_interproscan_binaries(self.script_dir, interproscan_dir)
-                if not activated:
-                    self.warnings.append(activation_msg)
-                    return False
-
-            native_ok, native_msg = self.check_interproscan_native_binaries(interproscan_dir)
-            if not native_ok:
-                self.warnings.append(native_msg)
-                return False
-
-            version_ok, version_msg = self.check_interproscan_version(self.interproscan_path, interproscan_dir)
-            if not version_ok:
-                self.warnings.append(version_msg)
-                return False
-                
-            return True
-
         interproscan_script = self.required_files['interproscan.sh']
         
         if not interproscan_script.exists():
@@ -456,8 +399,6 @@ class DependencyChecker:
         Ensure that the db directory is available.
 
         If the db directory is missing, attempt to extract it from an archive or download it.
-        When an external InterProScan is provided, db/interproscan is not strictly required, but
-        other assets (e.g., HMM files) may still be needed.
 
         Implemented via module/db_manager.py.
         
@@ -505,16 +446,12 @@ class DependencyChecker:
         all_dependencies_met = True
         
         # Ensure db directory is ready (unless skipped)
-        # If the user provides --interproscan, the local db directory is not required.
         if test_mode:
             print("\nDatabase files:")
             print("  [SKIP] Test mode (-test) does not require the db directory")
         elif skip_db_check:
             print("\nDatabase files:")
             print("  [SKIP] db checks are disabled")
-        elif self.interproscan_path:
-            print("\nDatabase files:")
-            print("  [SKIP] --interproscan specified; skipping db directory preparation checks")
         else:
             print("\nDatabase files:")
             if self.ensure_db_extracted():
