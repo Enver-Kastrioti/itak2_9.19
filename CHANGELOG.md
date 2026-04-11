@@ -17,9 +17,14 @@
 ### Changed
 - Promoted `itak` to the primary user-facing entrypoint and renamed the internal CLI orchestrator to `itak_cli.py`.
 - Removed the deprecated compatibility entrypoints `itak3-v1.0.py` and `run_itak3_local.sh`; repository scripts, install output, and docs now point only to `./itak`.
+- Removed the old `.venv` auto-reexec behavior from `itak`; the entrypoint now runs in the current Python environment instead of silently switching interpreters.
 - Strengthened bundled InterProScan validation in both dependency checks and `install_runtime`, including top-level file/dir checks, dataset checks, and `interproscan.sh -version` self-test coverage.
 - Updated `install_runtime` so invalid `db/interproscan` or invalid `--interproscan-dir` inputs no longer hard-fail immediately; the installer can now diagnose the issues, prompt for bundled db repair, or auto-repair via `--download-db`.
 - Updated `install_runtime --status` to report invalid or missing InterProScan layouts without crashing, and to clearly mark `./itak` as the preferred CLI.
+- Added an explicit InterProScan runtime configurator at `tools/configure_interproscan_runtime.py` plus a runtime manifest under `runtime/interproscan_manifest.json`.
+- Added an initial `pixi.toml` with explicit tasks for runtime configuration, runtime status checks, dependency checks, smoke tests, and `itak`.
+- Retired `install_runtime.sh`; it now exits with migration guidance instead of bootstrapping a `.venv`.
+- Removed `tools/install_runtime.py` from the main setup workflow; explicit runtime configuration now goes through `pixi` tasks or `tools/configure_interproscan_runtime.py`.
 - Extended `pre_model/predict.py` with explicit `--device` selection and optional batch-progress reporting via `--progress-every`, while preserving the default automatic device choice.
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
 - Added `--skip-pk` to disable protein kinase analysis when needed.
@@ -45,8 +50,12 @@
 - `./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_predict_pk_recheck`
 - `./itak -i test_protein_kinase.fasta --appl PROSITEPROFILES --debug -o output/pk_debug_json`
 - `./.venv/bin/python pre_model/predict.py --fasta test_pk_no_tf_candidate.fasta --output output/predict_cli_options_check.csv --device cpu --progress-every 1`
-- `python3 tools/install_runtime.py --status`
-- `python3 tools/install_runtime.py --status --interproscan-dir /tmp/itak_missing_interproscan`
+- `python3 tools/configure_interproscan_runtime.py --status`
+- `python3 tools/configure_interproscan_runtime.py --check`
+- `pixi task list`
+- `pixi run runtime-status`
+- `pixi run configure-runtime`
+- `pixi run runtime-check`
 
 ### Relevant commits
 - `2e10ea3` Add protein kinase classification workflow

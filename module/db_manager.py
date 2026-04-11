@@ -17,6 +17,16 @@ INTERPROSCAN_REQUIRED_FILES = (
     "interproscan.properties",
 )
 
+INTERPROSCAN_REQUIRED_ENGINE_NONEMPTY_DIRS = (
+    "bin",
+    "lib",
+)
+
+INTERPROSCAN_REQUIRED_ENGINE_DIRS = (
+    "work",
+    "temp",
+)
+
 INTERPROSCAN_REQUIRED_NONEMPTY_DIRS = (
     "bin",
     "data",
@@ -130,6 +140,97 @@ def validate_interproscan_installation(interproscan_dir):
                 issues.append(
                     f"InterProScan dataset directory has no non-empty version subdirectory: {dataset_dir}"
                 )
+
+    return issues
+
+
+def validate_interproscan_engine_installation(interproscan_dir):
+    """
+    Validate the engine-side InterProScan layout without enforcing the bundled data layout.
+
+    This is intended for future setups where the engine and the iTAK-managed data directory
+    are configured separately.
+    """
+    interproscan_dir = Path(interproscan_dir)
+    issues = []
+
+    if not interproscan_dir.exists():
+        return [f"InterProScan directory does not exist: {interproscan_dir}"]
+    if not interproscan_dir.is_dir():
+        return [f"InterProScan path is not a directory: {interproscan_dir}"]
+
+    for relative_name in INTERPROSCAN_REQUIRED_FILES:
+        target = interproscan_dir / relative_name
+        if not target.exists():
+            issues.append(f"Missing required file: {target}")
+            continue
+        if not target.is_file():
+            issues.append(f"Required file is not a regular file: {target}")
+            continue
+        if not _path_is_non_empty(target):
+            issues.append(f"Required file is empty: {target}")
+
+    for relative_name in INTERPROSCAN_REQUIRED_ENGINE_NONEMPTY_DIRS:
+        target = interproscan_dir / relative_name
+        if not target.exists():
+            issues.append(f"Missing required directory: {target}")
+            continue
+        if not target.is_dir():
+            issues.append(f"Required directory is not a directory: {target}")
+            continue
+        if not _path_is_non_empty(target):
+            issues.append(f"Required directory is empty: {target}")
+
+    for relative_name in INTERPROSCAN_REQUIRED_ENGINE_DIRS:
+        target = interproscan_dir / relative_name
+        if not target.exists():
+            issues.append(f"Missing required directory: {target}")
+            continue
+        if not target.is_dir():
+            issues.append(f"Required directory is not a directory: {target}")
+
+    return issues
+
+
+def validate_interproscan_data_directory(data_dir):
+    """
+    Validate an iTAK-managed InterProScan data directory independently of the engine layout.
+    """
+    data_dir = Path(data_dir)
+    issues = []
+
+    if not data_dir.exists():
+        return [f"InterProScan data directory does not exist: {data_dir}"]
+    if not data_dir.is_dir():
+        return [f"InterProScan data path is not a directory: {data_dir}"]
+    if not _path_is_non_empty(data_dir):
+        return [f"InterProScan data directory is empty: {data_dir}"]
+
+    for dataset_name in INTERPROSCAN_REQUIRED_DATASETS:
+        dataset_dir = data_dir / dataset_name
+        if not dataset_dir.exists():
+            issues.append(f"Missing InterProScan dataset directory: {dataset_dir}")
+            continue
+        if not dataset_dir.is_dir():
+            issues.append(f"InterProScan dataset path is not a directory: {dataset_dir}")
+            continue
+        if not _path_is_non_empty(dataset_dir):
+            issues.append(f"InterProScan dataset directory is empty: {dataset_dir}")
+            continue
+
+        has_non_empty_version_dir = False
+        try:
+            for child in dataset_dir.iterdir():
+                if child.is_dir() and _path_is_non_empty(child):
+                    has_non_empty_version_dir = True
+                    break
+        except OSError:
+            has_non_empty_version_dir = False
+
+        if not has_non_empty_version_dir:
+            issues.append(
+                f"InterProScan dataset directory has no non-empty version subdirectory: {dataset_dir}"
+            )
 
     return issues
 

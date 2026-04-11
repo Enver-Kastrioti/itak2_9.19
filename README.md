@@ -83,90 +83,67 @@ Installation
 - HMMER 3.0+ (`hmmscan`)
 - PyTorch (only if you use `--predict` / `--list-predict` / `--grad-cam-mode`)
 
-## Recommended installer
+## Recommended setup: pixi
 ```bash
-./install_runtime.sh
+pixi run configure-runtime
 ```
 
-Primary entrypoint after installation:
+Primary entrypoint after setup:
 ```bash
 ./itak
 ```
 
-Optional:
+You can also run the CLI through the managed pixi environment:
 ```bash
-# inspect current local runtime status
-./install_runtime.sh --status
-
-# automatically repair or prepare bundled db/interproscan when missing or broken
-./install_runtime.sh --download-db
-
-# remove generated runtime files
-./install_runtime.sh --clean-runtime
-
-# also install PyTorch CPU packages
-./install_runtime.sh --with-predict
-
-# Apple Silicon / Metal
-./install_runtime.sh --with-predict --predict-backend mps
-
-# CUDA example
-./install_runtime.sh --with-predict --predict-backend cuda --torch-index-url https://download.pytorch.org/whl/cu121
-
-# run a post-install smoke test
-./install_runtime.sh --smoke-test
-
-# run the repository smoke test directly
-./smoke_test.sh
-
-# include the prediction workflow in the smoke test
-./smoke_test.sh --predict
-
-# run a positive PK smoke test
-./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
-
-# run the prediction workflow with a positive PK sample
-./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
-
-# install into the current Python without creating .venv
-./install_runtime.sh --no-venv
-
-# configure against an existing external InterProScan installation
-./install_runtime.sh --interproscan-dir /path/to/interproscan
+pixi run itak --help
 ```
 
-This installer will:
-- create or reuse a Python runtime
-- install required Python packages
-- generate `db/interproscan/interproscan.local.properties`
-- generate `run_interproscan_local.sh`
-- configure the bundled InterProScan to use the platform helper binaries under `bin/`
-- run `./itak --check-deps`
-- optionally run a post-install smoke test through both InterProScan and the main iTAK3 workflow
-- prompt to repair missing or incomplete `db/interproscan` installations, or auto-repair them with `--download-db`
+The `itak` entrypoint now uses the current Python environment directly. It no longer auto-reexecs into a repository `.venv`.
 
-If you configure the runtime against an external InterProScan directory, repository-local iTAK commands should still pass the script explicitly:
+Common pixi tasks:
+```bash
+# inspect current runtime status
+pixi run runtime-status
+
+# validate engine + iTAK data + minimal self-test without writing config
+pixi run runtime-check
+
+# run dependency checks through the managed environment
+pixi run check-deps
+
+# run the repository smoke test directly
+pixi run smoke-test
+
+# quick regression suite
+pixi run checkpoint-quick
+```
+
+`pixi run configure-runtime` will:
+- generate `db/interproscan/interproscan.local.properties`
+- validate the InterProScan engine layout separately from the iTAK-managed data layout
+- configure the selected engine to use the iTAK-managed `db/interproscan/data`
+- activate iTAK helper binaries on macOS when required
+- run a minimal `interproscan.sh -version` self-test
+- record the Python and Perl executables from the current pixi environment
+
+You can configure against an external engine while still forcing iTAK to use its own slimmed data:
+```bash
+pixi run configure-runtime -- --engine-dir /path/to/interproscan
+```
+
+Repository-local analysis with an explicitly provided external engine still uses the `itak` entrypoint:
 ```bash
 ./itak --interproscan /path/to/interproscan.sh -i input.fasta
 ```
 
-Generated runtime files can be removed with:
+## Alternative setup: existing Python / conda / bioconda environment
+If you already created an environment yourself, install the Python packages there and run the runtime configurator explicitly.
+
 ```bash
-./install_runtime.sh --clean-runtime
-./install_runtime.sh --clean-runtime --remove-venv
+pip install -r requirements-core.txt
 ```
 
-You can inspect the current local runtime state with:
-```bash
-./install_runtime.sh --status
-```
-
-## Python Packages
-```bash
-pip install biopython pandas numpy
-```
-
-Optional (prediction / Grad-CAM):
+Optional prediction packages:
 ```bash
 # CPU
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -178,9 +155,26 @@ pip install torch torchvision torchaudio
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
+Then configure the runtime:
+```bash
+python3 tools/configure_interproscan_runtime.py
+python3 tools/configure_interproscan_runtime.py --status
+python3 tools/configure_interproscan_runtime.py --check
+```
+
+External engine example:
+```bash
+python3 tools/configure_interproscan_runtime.py --engine-dir /path/to/interproscan
+```
+
+## Deprecated bootstrap script
+- `install_runtime.sh` is retired and now exits with a migration message.
+- `tools/install_runtime.py` has been removed from the recommended workflow; use `pixi` or `tools/configure_interproscan_runtime.py` instead.
+
 ## InterProScan Database (db/)
-- If you use the bundled InterProScan, make sure `db/` exists or `db.tar.gz` is available in the project root.
-- If you use an external InterProScan via `--interproscan /path/to/interproscan.sh`, you can skip the bundled `db/`.
+- iTAK does not use the official full InterProScan data package.
+- `db/interproscan/data` is an iTAK-managed slimmed dataset for TF/TR/PK workflows and must remain under iTAK control.
+- If you use an external InterProScan engine via `--interproscan /path/to/interproscan.sh`, keep using the iTAK-managed data directory.
 
 ## Protein kinase database (`db/itak3_pk`)
 - iTAK3 bundles a reduced protein kinase HMM database under `db/itak3_pk/`.
@@ -198,7 +192,7 @@ Usage
 
 ## Entry point
 - Installed or repository-local usage should go through `itak`.
-- In a cloned repository, invoke it as `./itak`.
+- In a cloned repository, invoke it as `./itak` or `pixi run itak`.
 
 ## Syntax
 ```bash

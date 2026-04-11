@@ -14,23 +14,6 @@ except ImportError:
     build_runtime_env = None
 
 
-def reexec_local_venv():
-    script_dir = Path(__file__).resolve().parent
-    venv_dir = script_dir / ".venv"
-    venv_python = script_dir / ".venv" / "bin" / "python"
-    if os.environ.get("ITAK_SKIP_LOCAL_VENV") == "1":
-        return
-    if not venv_python.exists() or not venv_python.is_file():
-        return
-
-    current_prefix = Path(sys.prefix).resolve()
-    if current_prefix == venv_dir.resolve():
-        return
-
-    os.environ["ITAK_SKIP_LOCAL_VENV"] = "1"
-    os.execv(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]])
-
-
 def configure_local_runtime():
     script_dir = Path(__file__).resolve().parent
     if build_runtime_env is not None:
@@ -84,14 +67,16 @@ def ensure_local_interproscan_config(script_dir):
     rewrite_config = not local_config.exists()
     if not rewrite_config:
         existing = load_properties(local_config)
-        for key, expected_value in replacements.items():
+        required_path_keys = ("bin.directory", "data.directory", "python3.command")
+        for key in required_path_keys:
             current_value = existing.get(key)
-            if current_value != expected_value:
+            if not current_value or not Path(current_value).exists():
                 rewrite_config = True
-                if key != "python3.command":
-                    break
-                if not current_value or not Path(current_value).exists():
-                    break
+                break
+
+        perl_value = existing.get("perl.command")
+        if not rewrite_config and not perl_value:
+            rewrite_config = True
 
     if rewrite_config:
         lines = template_path.read_text(encoding="utf-8").splitlines()
@@ -102,7 +87,6 @@ def ensure_local_interproscan_config(script_dir):
 
 
 if __name__ == "__main__":
-    reexec_local_venv()
     configure_local_runtime()
     from itak_cli import main
 
