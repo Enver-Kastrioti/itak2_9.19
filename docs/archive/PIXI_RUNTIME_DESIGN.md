@@ -1,5 +1,11 @@
 # iTAK Runtime And Packaging Design
 
+This file is kept as a transitional design record from the pixi/runtime migration period.
+
+The canonical current design is documented in:
+
+- [CURRENT_DESIGN.md](/Users/kentnf/projects/cornell/itak2_9.19/docs/CURRENT_DESIGN.md)
+
 ## Goal
 
 Define a runtime model that supports all of the following without ambiguity:

@@ -1,5 +1,7 @@
 # InterProScan Helper Binaries
 
+This file was moved from `bin/SOURCES.md` so project-level documentation can live under `docs/`.
+
 This repository now contains a split helper-binary layout under `bin/`:
 
 - `bin/linux/`: binaries and scripts copied from the bundled `db/interproscan`

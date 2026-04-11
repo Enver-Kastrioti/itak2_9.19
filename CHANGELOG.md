@@ -29,6 +29,7 @@
 - Extended `pre_model/predict.py` with explicit `--device` selection and optional batch-progress reporting via `--progress-every`, while preserving the default automatic device choice.
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
 - Added `--skip-pk` to disable protein kinase analysis when needed.
+- Consolidated project documentation under `docs/`, added a canonical current-design document, and moved transitional planning notes into `docs/archive/`.
 - Simplified protein kinase outputs to avoid duplicate files:
   - `protein_kinase/<name>_pk_classified.fasta`
   - `protein_kinase/pk_classification.tsv`

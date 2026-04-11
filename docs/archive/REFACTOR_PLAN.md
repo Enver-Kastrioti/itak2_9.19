@@ -1,5 +1,11 @@
 # iTAK3 Refactor Plan
 
+This file is kept for historical reference only.
+
+The current architecture and runtime policy are documented in:
+
+- [CURRENT_DESIGN.md](/Users/kentnf/projects/cornell/itak2_9.19/docs/CURRENT_DESIGN.md)
+
 ## Goal
 
 Stabilize the current iTAK3 architecture without changing scientific behavior:

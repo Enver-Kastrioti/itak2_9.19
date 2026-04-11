@@ -51,6 +51,7 @@ Project Layout
 itak3/
 ├── itak
 ├── itak_cli.py
+├── docs/
 ├── module/
 │   ├── check_dependencies.py
 │   ├── validate_fasta.py
@@ -171,6 +172,10 @@ python3 tools/configure_interproscan_runtime.py --check
 ```bash
 git clone https://github.com/Enver-Kastrioti/itak2_9.19.git
 ```
+
+## Project Documentation
+- Current design reference: [docs/CURRENT_DESIGN.md](/Users/kentnf/projects/cornell/itak2_9.19/docs/CURRENT_DESIGN.md)
+- Documentation index: [docs/README.md](/Users/kentnf/projects/cornell/itak2_9.19/docs/README.md)
 
 Usage
 --------
