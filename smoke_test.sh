@@ -73,8 +73,6 @@ if [[ -x "$ROOT_DIR/itak" ]]; then
   CMD=("$ROOT_DIR/itak")
 elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
   CMD=("$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/itak")
-elif [[ -x "$ROOT_DIR/run_itak3_local.sh" ]]; then
-  CMD=("$ROOT_DIR/run_itak3_local.sh")
 else
   CMD=("python3" "$ROOT_DIR/itak")
 fi

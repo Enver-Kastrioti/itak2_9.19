@@ -140,21 +140,6 @@ def write_interproscan_wrapper(wrapper_path, *, java_bin, helper_root, config_pa
     wrapper_path.chmod(0o755)
 
 
-def write_itak_wrapper(wrapper_path, *, java_bin, helper_root, config_path, python_bin, interproscan_script=None):
-    lines = build_runtime_shell_lines(java_bin=java_bin, helper_root=helper_root, config_path=config_path)
-    itak_exec = f'exec "{python_bin}" "$SCRIPT_DIR/itak"'
-    if interproscan_script is not None:
-        itak_exec += f' --interproscan "{interproscan_script}"'
-    lines.extend(
-        [
-            f'{itak_exec} "$@"',
-            "",
-        ]
-    )
-    wrapper_path.write_text("\n".join(lines), encoding="utf-8")
-    wrapper_path.chmod(0o755)
-
-
 def install_python_packages(python_bin, *, with_predict, predict_backend, torch_index_url):
     run_command([str(python_bin), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"])
     run_command([str(python_bin), "-m", "pip", "install", "-r", str(ROOT_DIR / "requirements-core.txt")])
@@ -319,7 +304,6 @@ def ensure_usable_interproscan(interproscan_dir, *, auto_download):
 def print_status(*, interproscan_dir, venv_dir):
     local_config = interproscan_dir / "interproscan.local.properties"
     interproscan_wrapper = ROOT_DIR / "run_interproscan_local.sh"
-    legacy_itak_wrapper = ROOT_DIR / "run_itak3_local.sh"
     itak_entry = ROOT_DIR / "itak"
     properties = load_properties(local_config)
     interproscan_issues = validate_interproscan_installation(interproscan_dir)
@@ -337,13 +321,8 @@ def print_status(*, interproscan_dir, venv_dir):
     print(f"  Local config: {local_config} ({'present' if local_config.exists() else 'missing'})")
     print(f"  InterProScan wrapper: {interproscan_wrapper} ({'present' if interproscan_wrapper.exists() else 'missing'})")
     print(f"  iTAK entry script: {itak_entry} ({'present' if itak_entry.exists() else 'missing'})")
-    print(
-        f"  Deprecated compatibility wrapper: {legacy_itak_wrapper} "
-        f"({'present' if legacy_itak_wrapper.exists() else 'missing'})"
-    )
     print(f"  Selected venv path: {venv_dir} ({'present' if venv_dir.exists() else 'missing'})")
     print("  Preferred CLI: ./itak")
-    print("  Compatibility note: do not script against run_itak3_local.sh in new setups")
     if interproscan_issues:
         print("  InterProScan issues:")
         print_interproscan_issues(interproscan_issues)
@@ -537,19 +516,16 @@ def main():
     if legacy_wrapper_path.exists() or legacy_wrapper_path.is_symlink():
         legacy_wrapper_path.unlink()
 
-    legacy_itak_wrapper_path = ROOT_DIR / "run_itak3_local.sh"
-    write_itak_wrapper(
-        legacy_itak_wrapper_path,
-        java_bin=java_bin,
-        helper_root=helper_root,
-        config_path=local_config,
-        python_bin=runtime_python,
-        interproscan_script=(interproscan_script if not using_bundled_interproscan else None),
-    )
+    removed_legacy_paths = []
+    obsolete_wrapper_path = ROOT_DIR / "run_itak3_local.sh"
+    if obsolete_wrapper_path.exists() or obsolete_wrapper_path.is_symlink():
+        obsolete_wrapper_path.unlink()
+        removed_legacy_paths.append(obsolete_wrapper_path)
 
     print(f"Wrote local InterProScan config: {local_config}")
     print(f"Wrote runtime wrapper: {wrapper_path}")
-    print(f"Refreshed deprecated iTAK3 wrapper: {legacy_itak_wrapper_path}")
+    for obsolete_path in removed_legacy_paths:
+        print(f"Removed obsolete compatibility entrypoint: {obsolete_path}")
     print(f"Runtime Python: {runtime_python}")
     print(f"Java: {java_bin}")
     print(f"Configured InterProScan script: {interproscan_script}")
@@ -587,8 +563,6 @@ def main():
             "This runtime uses an external InterProScan. "
             f"Add --interproscan {shlex.quote(str(interproscan_script))} to iTAK commands."
         )
-    print(f"Deprecated compatibility wrapper remains available at: {shell_join([str(legacy_itak_wrapper_path), '-i', 'input.fasta'])}")
-    print("Do not rely on run_itak3_local.sh for new scripts or documentation.")
     print(f"Use InterProScan directly with: {shell_join([str(wrapper_path), '-i', 'input.fasta', '-f', 'json', '-d', 'output_dir'])}")
 
 

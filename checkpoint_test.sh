@@ -79,8 +79,6 @@ if [[ -x "$ROOT_DIR/itak" ]]; then
   ITAK_CMD=("$ROOT_DIR/itak")
 elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
   ITAK_CMD=("$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/itak")
-elif [[ -x "$ROOT_DIR/run_itak3_local.sh" ]]; then
-  ITAK_CMD=("$ROOT_DIR/run_itak3_local.sh")
 else
   ITAK_CMD=("python3" "$ROOT_DIR/itak")
 fi
@@ -107,7 +105,6 @@ check_file() {
 run_step "Syntax Check" python -m py_compile \
   "$ROOT_DIR/itak" \
   "$ROOT_DIR/itak_cli.py" \
-  "$ROOT_DIR/itak3-v1.0.py" \
   "$ROOT_DIR/module/check_dependencies.py" \
   "$ROOT_DIR/module/protein_kinase.py" \
   "$ROOT_DIR/module/output_contracts.py" \

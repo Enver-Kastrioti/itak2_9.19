@@ -43,7 +43,6 @@ Project Layout
 ## Key Scripts
 - `itak`: user-facing CLI entry point
 - `itak_cli.py`: internal CLI orchestrator (analysis / prediction / Grad-CAM orchestration)
-- `itak3-v1.0.py`: temporary compatibility shim for older invocations
 - `pre_model/predict.py`: deep-learning preclassification (+ Grad-CAM heatmaps)
 - `module/`: pipeline modules (FASTA processing, IPR JSON parsing, hmmscan processing, classification, checks)
 - `rule.txt`: TF family classification rules
@@ -52,7 +51,6 @@ Project Layout
 itak3/
 ├── itak
 ├── itak_cli.py
-├── itak3-v1.0.py
 ├── module/
 │   ├── check_dependencies.py
 │   ├── validate_fasta.py
@@ -94,10 +92,6 @@ Primary entrypoint after installation:
 ```bash
 ./itak
 ```
-
-Compatibility note:
-- `run_itak3_local.sh` is kept only as a deprecated compatibility wrapper.
-- New commands, automation, and documentation should call `./itak` directly.
 
 Optional:
 ```bash
@@ -146,7 +140,6 @@ This installer will:
 - install required Python packages
 - generate `db/interproscan/interproscan.local.properties`
 - generate `run_interproscan_local.sh`
-- refresh deprecated compatibility wrapper `run_itak3_local.sh`
 - configure the bundled InterProScan to use the platform helper binaries under `bin/`
 - run `./itak --check-deps`
 - optionally run a post-install smoke test through both InterProScan and the main iTAK3 workflow
@@ -206,7 +199,6 @@ Usage
 ## Entry point
 - Installed or repository-local usage should go through `itak`.
 - In a cloned repository, invoke it as `./itak`.
-- `itak3-v1.0.py` and `run_itak3_local.sh` remain only as temporary compatibility shims.
 
 ## Syntax
 ```bash
@@ -217,21 +209,6 @@ Repository-local invocation after cloning the repo:
 ```bash
 ./itak [options] -i <input_file>
 ```
-
-Deprecated compatibility entrypoints:
-- `itak3-v1.0.py`
-- `run_itak3_local.sh`
-- Both still forward to `itak`, but new usage should call `./itak` directly.
-
-Migration notes:
-- Replace `python itak3-v1.0.py ...` with `./itak ...`
-- Replace `./run_itak3_local.sh ...` with `./itak ...`
-- Use `./itak --version` to inspect the CLI version instead of relying on a versioned filename
-
-Removal plan:
-- `itak3-v1.0.py` and `run_itak3_local.sh` are slated for removal in the next breaking-change cleanup release.
-- Before removing them, keep all examples, automation, and local notes on `./itak`.
-- New scripts and documentation should not introduce fresh references to the deprecated entrypoints.
 
 ## Primary arguments
 - `--version`: Show the CLI version and exit
