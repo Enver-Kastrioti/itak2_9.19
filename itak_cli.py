@@ -1263,7 +1263,7 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
         if not ensure_db_extracted():
             raise PipelineStageError("hmmscan", "db directory is not available")
 
-        hmm_db = SCRIPT_DIR / "hmm" / "self_build.hmm"
+        hmm_db = SCRIPT_DIR / "db" / "hmm_self_build" / "self_build.hmm"
         if not hmm_db.exists():
             raise PipelineStageError("hmmscan", f"HMM database file not found: {hmm_db}")
 

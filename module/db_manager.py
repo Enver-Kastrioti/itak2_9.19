@@ -47,6 +47,44 @@ INTERPROSCAN_REQUIRED_DATASETS = (
     "smart",
 )
 
+HMM_SELF_BUILD_REQUIRED_FILES = (
+    "self_build.hmm",
+    "self_build.hmm.h3f",
+    "self_build.hmm.h3i",
+    "self_build.hmm.h3m",
+    "self_build.hmm.h3p",
+)
+
+HMM_PK_REQUIRED_FILES = (
+    "GA_table.txt",
+    "PK_class_desc.txt",
+    "Tfam_domain.hmm",
+    "Tfam_domain.hmm.h3f",
+    "Tfam_domain.hmm.h3i",
+    "Tfam_domain.hmm.h3m",
+    "Tfam_domain.hmm.h3p",
+    "Plant_Pkinase_fam.hmm",
+    "Plant_Pkinase_fam.hmm.h3f",
+    "Plant_Pkinase_fam.hmm.h3i",
+    "Plant_Pkinase_fam.hmm.h3m",
+    "Plant_Pkinase_fam.hmm.h3p",
+    "PlantsPHMM3_89.hmm",
+    "PlantsPHMM3_89.hmm.h3f",
+    "PlantsPHMM3_89.hmm.h3i",
+    "PlantsPHMM3_89.hmm.h3m",
+    "PlantsPHMM3_89.hmm.h3p",
+    "Pkinase_sub_WNK1.hmm",
+    "Pkinase_sub_WNK1.hmm.h3f",
+    "Pkinase_sub_WNK1.hmm.h3i",
+    "Pkinase_sub_WNK1.hmm.h3m",
+    "Pkinase_sub_WNK1.hmm.h3p",
+    "Pkinase_sub_MAK.hmm",
+    "Pkinase_sub_MAK.hmm.h3f",
+    "Pkinase_sub_MAK.hmm.h3i",
+    "Pkinase_sub_MAK.hmm.h3m",
+    "Pkinase_sub_MAK.hmm.h3p",
+)
+
 
 def _path_is_non_empty(path):
     path = Path(path)
@@ -234,6 +272,37 @@ def validate_interproscan_data_directory(data_dir):
 
     return issues
 
+
+def _validate_required_files_in_directory(target_dir, required_files, label):
+    target_dir = Path(target_dir)
+    issues = []
+
+    if not target_dir.exists():
+        return [f"{label} directory does not exist: {target_dir}"]
+    if not target_dir.is_dir():
+        return [f"{label} path is not a directory: {target_dir}"]
+
+    for relative_name in required_files:
+        target = target_dir / relative_name
+        if not target.exists():
+            issues.append(f"Missing required {label} file: {target}")
+            continue
+        if not target.is_file():
+            issues.append(f"Required {label} file is not a regular file: {target}")
+            continue
+        if not _path_is_non_empty(target):
+            issues.append(f"Required {label} file is empty: {target}")
+
+    return issues
+
+
+def validate_hmm_self_build_directory(hmm_dir):
+    return _validate_required_files_in_directory(hmm_dir, HMM_SELF_BUILD_REQUIRED_FILES, "self-build HMM")
+
+
+def validate_hmm_pk_directory(hmm_dir):
+    return _validate_required_files_in_directory(hmm_dir, HMM_PK_REQUIRED_FILES, "protein kinase HMM")
+
 def calculate_sha256(file_path):
     """Calculate SHA256 hash of a file."""
     sha256_hash = hashlib.sha256()
@@ -259,6 +328,8 @@ def check_db_integrity(db_path, verbose=True):
 
     interproscan_dir = db_path / "interproscan"
     issues = validate_interproscan_installation(interproscan_dir)
+    issues.extend(validate_hmm_pk_directory(db_path / "hmm_pk"))
+    issues.extend(validate_hmm_self_build_directory(db_path / "hmm_self_build"))
     if issues:
         if verbose:
             for issue in issues:
@@ -348,14 +419,18 @@ def setup_db(project_root):
     
     print("DB directory missing or incomplete.")
     
-    broken_interproscan_dir = db_path / "interproscan"
-    if broken_interproscan_dir.exists():
-        print(f"Removing incomplete InterProScan directory: {broken_interproscan_dir}")
-        try:
-            shutil.rmtree(broken_interproscan_dir)
-        except Exception as e:
-            print(f"Failed to remove incomplete InterProScan directory: {e}")
-            return False
+    for broken_dir in (
+        db_path / "interproscan",
+        db_path / "hmm_pk",
+        db_path / "hmm_self_build",
+    ):
+        if broken_dir.exists():
+            print(f"Removing incomplete database directory: {broken_dir}")
+            try:
+                shutil.rmtree(broken_dir)
+            except Exception as e:
+                print(f"Failed to remove incomplete database directory: {e}")
+                return False
 
     # 2. Check if tar.gz exists
     if not tar_path.exists():

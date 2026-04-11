@@ -63,7 +63,11 @@ database independently of upstream InterProScan releases.
 
 Protein kinase support is also project-owned and bundled under:
 
-- `db/itak3_pk`
+- `db/hmm_pk`
+
+The TF/TR hmmscan database is bundled under:
+
+- `db/hmm_self_build`
 
 ## Runtime Configuration Policy
 

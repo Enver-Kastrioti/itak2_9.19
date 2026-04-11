@@ -66,9 +66,8 @@ itak3/
 │   └── supplementary_model/
 ├── db/
 │   ├── interproscan/
-│   └── itak3_pk/
-├── hmm/
-│   └── self_build.hmm
+│   ├── hmm_pk/
+│   └── hmm_self_build/
 ├── rule.txt
 ├── output/
 ├── temp/
@@ -162,8 +161,12 @@ python3 tools/configure_interproscan_runtime.py --check
 - `db/interproscan/` is an iTAK-managed bundled runtime for TF/TR/PK workflows.
 - Users should not point iTAK at an external InterProScan installation.
 
-## Protein kinase database (`db/itak3_pk`)
-- iTAK3 bundles a reduced protein kinase HMM database under `db/itak3_pk/`.
+## TF/TR HMM database (`db/hmm_self_build`)
+- iTAK3 bundles the TF/TR self-build HMM database under `db/hmm_self_build/`.
+- The main hmmscan stage uses `db/hmm_self_build/self_build.hmm`.
+
+## Protein kinase database (`db/hmm_pk`)
+- iTAK3 bundles a reduced protein kinase HMM database under `db/hmm_pk/`.
 - This PK workflow uses `hmmscan` only; it does not depend on InterProScan.
 - Required profiles include `Tfam_domain.hmm`, `Plant_Pkinase_fam.hmm`, `PlantsPHMM3_89.hmm`,
   `Pkinase_sub_WNK1.hmm`, `Pkinase_sub_MAK.hmm`, plus `GA_table.txt` and `PK_class_desc.txt`.

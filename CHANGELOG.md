@@ -3,13 +3,13 @@
 ## Unreleased
 
 ### Added
-- Reintroduced protein kinase identification and classification into iTAK3 using bundled HMM profiles under `db/itak3_pk/`.
+- Reintroduced protein kinase identification and classification into iTAK3 using bundled HMM profiles under `db/hmm_pk/`.
 - Added a dedicated protein kinase pipeline in `module/protein_kinase.py` with:
   - kinase identification via `PF00069` / `PF07714`
   - Shiu classification
   - PPC classification
   - subclass refinement for WNK1 and MAK groups
-- Added bundled protein kinase database assets under `db/itak3_pk/`.
+- Added bundled protein kinase database assets under `db/hmm_pk/`.
 - Added positive protein kinase example input: `test_protein_kinase.fasta`.
 - Added positive protein kinase smoke-test coverage for both direct mode and `--predict` mode.
 - Added optional combined result summary output: `result/all_match_tbl.txt` in `--debug` mode.
@@ -30,6 +30,7 @@
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
 - Added `--skip-pk` to disable protein kinase analysis when needed.
 - Consolidated project documentation under `docs/`, added a canonical current-design document, and moved transitional planning notes into `docs/archive/`.
+- Moved the TF/TR self-build HMM database into `db/hmm_self_build/` and renamed the protein kinase HMM bundle directory to `db/hmm_pk/`.
 - Simplified protein kinase outputs to avoid duplicate files:
   - `protein_kinase/<name>_pk_classified.fasta`
   - `protein_kinase/pk_classification.tsv`

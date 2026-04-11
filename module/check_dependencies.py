@@ -91,7 +91,7 @@ class DependencyChecker:
         
         self.required_files = {
             'interproscan.sh': self.script_dir / "db" / "interproscan" / "interproscan.sh",
-            'self_build.hmm': self.script_dir / "hmm" / "self_build.hmm",
+            'self_build.hmm': self.script_dir / "db" / "hmm_self_build" / "self_build.hmm",
             'predict.py': self.script_dir / "pre_model" / "predict.py",
             'model.pth': self.script_dir / "pre_model" / "model.pth"
         }
