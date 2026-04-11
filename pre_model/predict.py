@@ -352,14 +352,18 @@ def sequence_to_onehot(sequence, max_length=1000, vocab_size=21):
     # For sequences shorter than max_length, remaining positions stay zero (padding)
     return onehot
 
-def predict_sequences_batch(model, sequences, device, max_length=1000, batch_size=16):
+def predict_sequences_batch(model, sequences, device, max_length=1000, batch_size=16, progress_every=0):
     """Batch predict sequences"""
     model.eval()
     all_predictions = []
+    total_batches = (len(sequences) + batch_size - 1) // batch_size if batch_size else 0
     
     with torch.no_grad():
         for i in range(0, len(sequences), batch_size):
             batch_sequences = sequences[i:i+batch_size]
+            batch_index = (i // batch_size) + 1
+            if progress_every and (batch_index == 1 or batch_index % progress_every == 0 or batch_index == total_batches):
+                print(f"[Prediction] Batch {batch_index}/{total_batches} ({len(batch_sequences)} sequences)")
             
             # Encode sequences as One-Hot
             encoded_batch = []
@@ -426,7 +430,7 @@ def get_sequence_fragments(sequence, window_size=1000, step_size=200, mode='fast
             
     return fragments
 
-def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_length=1000, batch_size=16, sequences=None, mode='fast', grad_cam_mode='none', grad_cam_output_dir=None, use_supplementary=False, supplementary_only=False, supp_model_paths=None):
+def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_length=1000, batch_size=16, sequences=None, mode='fast', grad_cam_mode='none', grad_cam_output_dir=None, use_supplementary=False, supplementary_only=False, supp_model_paths=None, progress_every=0):
     if sequences is None:
         print(f"\nProcessing file: {fasta_file}")
         sequences = parse_fasta(fasta_file)
@@ -509,7 +513,7 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_l
                 model_supp.load_state_dict(torch.load(model_path, map_location=device))
                 model_supp.to(device)
                 model_supp.eval()
-                preds = predict_sequences_batch(model_supp, expanded_sequences, device, max_length, batch_size)
+                preds = predict_sequences_batch(model_supp, expanded_sequences, device, max_length, batch_size, progress_every=progress_every)
                 for i, pred in enumerate(preds):
                     tfp = pred['tf_probability']
                     nfp = pred['non_tf_probability']
@@ -548,7 +552,7 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_l
             return [], []
  
     # Predict on all fragments (main model)
-    raw_predictions = predict_sequences_batch(model, expanded_sequences, device, max_length, batch_size)
+    raw_predictions = predict_sequences_batch(model, expanded_sequences, device, max_length, batch_size, progress_every=progress_every)
     
     results = []
     tf_headers = []
@@ -652,7 +656,7 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_l
                         model_supp.load_state_dict(torch.load(model_path, map_location=device))
                         model_supp.to(device)
                         model_supp.eval()
-                        supp_preds = predict_sequences_batch(model_supp, supp_fragments, device, max_length, batch_size)
+                        supp_preds = predict_sequences_batch(model_supp, supp_fragments, device, max_length, batch_size, progress_every=progress_every)
                         for i_pred, pred in enumerate(supp_preds):
                             tfp = pred['tf_probability']
                             nfp = pred['non_tf_probability']
@@ -823,6 +827,25 @@ def save_tf_predictions(predictions, output_file):
             ])
     print(f"TF prediction results saved to: {output_file}")
 
+
+def resolve_device(device_name):
+    if device_name == 'auto':
+        if torch.cuda.is_available():
+            return torch.device('cuda')
+        return torch.device('cpu')
+
+    if device_name == 'cuda':
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested but is not available")
+        return torch.device('cuda')
+
+    if device_name == 'mps':
+        if not hasattr(torch.backends, 'mps') or not torch.backends.mps.is_available():
+            raise RuntimeError("MPS requested but is not available")
+        return torch.device('mps')
+
+    return torch.device('cpu')
+
 def load_model(model_path, device, max_length=1000):
     """Load trained multi-scale CNN model"""
     print(f"Loading multi-scale CNN model: {model_path}")
@@ -907,6 +930,10 @@ def main():
                        help='Output CSV file path (default: auto-generated based on input filename)')
     parser.add_argument('--batch_size', type=int, default=16,
                        help='Batch size (default: 16)')
+    parser.add_argument('--device', type=str, choices=['auto', 'cpu', 'cuda', 'mps'], default='auto',
+                       help='Execution device. auto preserves the legacy behavior (cuda if available, else cpu).')
+    parser.add_argument('--progress-every', type=int, default=0,
+                       help='Print batch progress every N batches during prediction (default: 0, disabled)')
     parser.add_argument('--debug', action='store_true',
                        help='Debug mode, generate CSV file (default: False)')
     parser.add_argument('--output-tf-list', action='store_true',
@@ -952,7 +979,12 @@ def main():
         args.output = f"{base_name}_predictions_{timestamp}.csv"
     
     # Device configuration
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    try:
+        device = resolve_device(args.device)
+    except RuntimeError as exc:
+        print(f"Error: {exc}")
+        return
+    print(f"Using device: {device}")
     
     # Load model
     if args.supplementary_only:
@@ -998,7 +1030,8 @@ def main():
             grad_cam_output_dir=grad_cam_dir,
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
-            supp_model_paths=args.supp_models
+            supp_model_paths=args.supp_models,
+            progress_every=args.progress_every,
         )
     except Exception:
         predictions, tf_headers = predict_fasta(
@@ -1013,7 +1046,8 @@ def main():
             grad_cam_output_dir=grad_cam_dir,
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
-            supp_model_paths=args.supp_models
+            supp_model_paths=args.supp_models,
+            progress_every=args.progress_every,
         )
     
     if predictions:

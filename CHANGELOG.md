@@ -20,6 +20,7 @@
 - Strengthened bundled InterProScan validation in both dependency checks and `install_runtime`, including top-level file/dir checks, dataset checks, and `interproscan.sh -version` self-test coverage.
 - Updated `install_runtime` so invalid `db/interproscan` or invalid `--interproscan-dir` inputs no longer hard-fail immediately; the installer can now diagnose the issues, prompt for bundled db repair, or auto-repair via `--download-db`.
 - Updated `install_runtime --status` to report invalid or missing InterProScan layouts without crashing, and to clearly mark `./itak` as the preferred CLI.
+- Extended `pre_model/predict.py` with explicit `--device` selection and optional batch-progress reporting via `--progress-every`, while preserving the default automatic device choice.
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
 - Added `--skip-pk` to disable protein kinase analysis when needed.
 - Simplified protein kinase outputs to avoid duplicate files:
@@ -43,6 +44,7 @@
 - `./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_regression_pk`
 - `./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_predict_pk_recheck`
 - `./itak -i test_protein_kinase.fasta --appl PROSITEPROFILES --debug -o output/pk_debug_json`
+- `./.venv/bin/python pre_model/predict.py --fasta test_pk_no_tf_candidate.fasta --output output/predict_cli_options_check.csv --device cpu --progress-every 1`
 - `python3 tools/install_runtime.py --status`
 - `python3 tools/install_runtime.py --status --interproscan-dir /tmp/itak_missing_interproscan`
 

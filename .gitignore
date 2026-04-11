@@ -11,6 +11,7 @@ __pycache__/
 stderr
 output/
 temp/
+manuscript/
 run_interproscan_local.sh
 run_itak2_local.sh
 run_itak3_local.sh
