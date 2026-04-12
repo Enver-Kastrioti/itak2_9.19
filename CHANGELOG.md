@@ -28,6 +28,8 @@
 - Removed support for user-specified external InterProScan paths; iTAK now always uses the bundled `db/interproscan` runtime.
 - Extended `pre_model/predict.py` with explicit `--device` selection and optional batch-progress reporting via `--progress-every`, while preserving the default automatic device choice.
 - Integrated protein kinase analysis into both direct analysis mode and prediction mode.
+- Switched the CLI to a prediction-first default workflow; direct all-sequence analysis is now the explicit `--no-predict` fallback.
+- Collapsed Python dependency files into a single `requirements.txt` and aligned `pixi.toml` with the default predictive runtime.
 - Added `--skip-pk` to disable protein kinase analysis when needed.
 - Consolidated project documentation under `docs/`, added a canonical current-design document, and moved transitional planning notes into `docs/archive/`.
 - Moved the TF/TR self-build HMM database into `db/hmm_self_build/` and renamed the protein kinase HMM bundle directory to `db/hmm_pk/`.
@@ -49,8 +51,9 @@
 - `./checkpoint_test.sh --suite full --label no_legacy_entrypoints`
 - `./smoke_test.sh --output output/smoke_test_regression_default`
 - `./smoke_test.sh --output output/smoke_test_post_install_runtime`
+- `./smoke_test.sh --no-predict --output output/smoke_test_direct_fallback`
 - `./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_regression_pk`
-- `./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_predict_pk_recheck`
+- `./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2 --output output/smoke_test_predict_pk_recheck`
 - `./itak -i test_protein_kinase.fasta --appl PROSITEPROFILES --debug -o output/pk_debug_json`
 - `./.venv/bin/python pre_model/predict.py --fasta test_pk_no_tf_candidate.fasta --output output/predict_cli_options_check.csv --device cpu --progress-every 1`
 - `python3 tools/configure_interproscan_runtime.py --status`

@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_FASTA="$ROOT_DIR/test_protein.fasta"
 OUTPUT_DIR="$ROOT_DIR/output/smoke_test"
 APPL_LIST="PROSITEPROFILES"
-RUN_PREDICT=0
+RUN_PREDICT=1
 REQUIRE_PK_COUNT=""
 
 usage() {
@@ -13,7 +13,8 @@ usage() {
 Usage: ./smoke_test.sh [options]
 
 Options:
-  --predict           Run the prediction workflow before InterProScan/classification
+  --no-predict        Disable the default predictive prefilter and analyze all sequences directly
+  --predict           Legacy alias for the default predictive workflow
   --input PATH        Input FASTA file (default: test_protein.fasta)
   --output PATH       Output directory (default: output/smoke_test)
   --appl LIST         InterProScan applications (default: PROSITEPROFILES)
@@ -22,15 +23,19 @@ Options:
 
 Examples:
   ./smoke_test.sh
-  ./smoke_test.sh --predict
+  ./smoke_test.sh --no-predict
   ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
-  ./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
+  ./smoke_test.sh --no-predict --input test_protein_kinase.fasta --require-pk 2
   ./smoke_test.sh --appl CDD,Pfam,SMART
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --no-predict)
+      RUN_PREDICT=0
+      shift
+      ;;
     --predict)
       RUN_PREDICT=1
       shift
@@ -81,8 +86,8 @@ rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 ARGS=(-i "$INPUT_FASTA" --appl "$APPL_LIST" -o "$OUTPUT_DIR")
-if [[ "$RUN_PREDICT" -eq 1 ]]; then
-  ARGS=(--predict "${ARGS[@]}")
+if [[ "$RUN_PREDICT" -eq 0 ]]; then
+  ARGS=(--no-predict "${ARGS[@]}")
 fi
 
 echo "Running smoke test..."

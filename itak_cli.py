@@ -1901,43 +1901,43 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="itak",
-        description="iTAK3 - transcription factor prediction and analysis tool",
+        description="iTAK3 - transcription factor prediction-first analysis tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example usage:
-  # 1) Analyze input sequences directly (skip prediction)
+  # 1) Default workflow: predictive prefilter, then downstream analysis
   itak -i input.fasta
-  
-  # 2) Enable prediction: predict TFs, then run domain analysis and family classification
-  itak --predict -i input.fasta -t 0.1
-  
+
+  # 2) Direct fallback: disable the predictive prefilter
+  itak --no-predict -i input.fasta
+
   # 3) Specify an output directory (default: output/<input_basename>/)
-  itak --predict -i input.fasta -o /path/to/output
-  
+  itak -i input.fasta -o /path/to/output
+
   # 4) Restrict InterProScan applications (run only selected libraries)
   itak -i input.fasta --appl CDD,Pfam,SMART
-  
+
   # 5) Adjust InterProScan score filtering (retain only hits with score >= threshold)
   itak -i input.fasta --score 1.0
-  
+
   # 6) Classification policy: specific (specificity-first) or score (score-first, default)
   itak -i input.fasta --classification-mode specific
-  
+
   # 7) Prediction splitting mode: fast (default) or full (more comprehensive, slower)
-  itak --predict -i input.fasta --predict-mode full
-  
+  itak -i input.fasta --predict-mode full
+
   # 8) Use supplementary models (stacked with main model, or supplementary-only)
-  itak --predict --use-supplementary -i input.fasta
-  itak --predict --supplementary-only -i input.fasta
-  itak --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
-  
-  # 9) Grad-CAM heatmaps (available only with --predict; fast runs after classification in batch)
-  itak --predict --grad-cam-mode fast -i input.fasta
-  itak --predict --grad-cam-mode all -i input.fasta
-  
+  itak --use-supplementary -i input.fasta
+  itak --supplementary-only -i input.fasta
+  itak --use-supplementary --supp-models a.pth b.pth -i input.fasta
+
+  # 9) Grad-CAM heatmaps (available in the default workflow or with --no-predict)
+  itak --grad-cam-mode fast -i input.fasta
+  itak --grad-cam-mode all -i input.fasta
+
   # 10) Test mode: skip InterProScan/hmmscan and validate classification using existing files
   itak -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
-  
+
   # 11) Check dependencies and exit
   itak --check-deps
 
@@ -1955,7 +1955,9 @@ Example usage:
     
     # Feature options
     parser.add_argument('--predict', action='store_true', 
-                       help='Enable prediction (model inference is used as downstream analysis input)')
+                       help='Legacy alias for the default predictive workflow')
+    parser.add_argument('--no-predict', action='store_true',
+                       help='Disable the default predictive prefilter and analyze all eligible sequences directly')
     parser.add_argument('--list-predict', action='store_true',
                        help='Predict once, then classify under multiple thresholds to produce multiple outputs')
     # parser.add_argument('--extract-sequences', action='store_true', default=True, 
@@ -1975,7 +1977,7 @@ Example usage:
                        help='InterProScan application list (comma-separated). Allowed: CDD,NCBIfam,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART')
     
     parser.add_argument('--skip-pk', action='store_true',
-                       help='Skip protein kinase identification/classification (enabled by default in direct/predict modes)')
+                       help='Skip protein kinase identification/classification (enabled by default)')
 
     # Debug mode
     parser.add_argument('--debug', action='store_true', default=False,
@@ -1991,7 +1993,7 @@ Example usage:
     
     # Prediction splitting mode
     parser.add_argument('--predict-mode', choices=['fast', 'full'], default='fast',
-                       help="Prediction splitting mode: 'fast' (default) or 'full' (full coverage)")
+                       help="Predictive prefilter splitting mode: 'fast' (default) or 'full' (full coverage)")
     # Supplementary model options
     parser.add_argument('--use-supplementary', action='store_true',
                        help='Enable supplementary models for an additional prediction pass (default: off)')
@@ -2023,19 +2025,23 @@ Example usage:
     if args.check_deps:
         if DependencyChecker:
             checker = DependencyChecker()
-            success = checker.run_full_check()
+            success = checker.run_full_check(check_predict=True)
             sys.exit(0 if success else 1)
         else:
             print("Error: dependency checker module is unavailable")
             sys.exit(1)
+
+    if args.predict and args.no_predict:
+        print("Error: --predict and --no-predict cannot be used together")
+        sys.exit(1)
     
     # Run dependency checks (unless explicitly skipped)
     if not args.skip_deps_check and DependencyChecker:
         print(" Checking runtime dependencies...")
         checker = DependencyChecker()
         
-        # Decide whether to check prediction dependencies
-        check_predict = args.predict or args.list_predict
+        # Default runs use the predictive prefilter unless the user explicitly disables it.
+        check_predict = not args.test_mode and (args.list_predict or not args.no_predict or args.grad_cam_mode != 'none')
         dependencies_ok = checker.run_full_check(
             check_predict=check_predict,
             skip_db_check=args.test_mode,
@@ -2086,20 +2092,21 @@ Example usage:
         print("[OK] FASTA validation passed\n")
     else:
         print("[WARN] FASTA validation module unavailable; skipping format validation\n")
-    
-    # Grad-CAM argument validation
-    if args.grad_cam_mode in ['all', 'positive'] and not (args.predict or args.list_predict):
-        print("Error: Grad-CAM modes 'all' and 'positive' require --predict")
-        sys.exit(1)
+
     if args.list_predict and args.grad_cam_mode != 'none':
         print("Error: --list-predict does not currently support Grad-CAM; use --grad-cam-mode none")
+        sys.exit(1)
+    if args.list_predict and args.no_predict:
+        print("Error: --list-predict cannot be used together with --no-predict")
         sys.exit(1)
         
     # Validate test mode arguments
     if args.test_mode:
-        # In test mode, prediction is not allowed
         if args.predict:
-            print("Error: --predict cannot be used in test mode (-test)")
+            print("Error: --predict is not meaningful in test mode (-test)")
+            sys.exit(1)
+        if args.no_predict:
+            print("Error: --no-predict is not meaningful in test mode (-test)")
             sys.exit(1)
         if args.list_predict:
             print("Error: --list-predict cannot be used in test mode (-test)")
@@ -2132,6 +2139,8 @@ Example usage:
         if args.spechmm_file:
             print("Error: -spechmm can be used only in test mode (-test)")
             sys.exit(1)
+
+    use_predict_workflow = not args.no_predict and not args.list_predict and not args.test_mode
     
     # Dispatch by mode
     if args.test_mode:
@@ -2210,10 +2219,6 @@ Example usage:
                 sys.exit(1)
             print("[OK] Prediction dependency checks passed")
 
-        if args.predict:
-            print("Error: --list-predict cannot be used together with --predict")
-            sys.exit(1)
-
         success = list_predict_transcription_factors(
             fasta_file=args.input,
             output=args.output,
@@ -2228,31 +2233,24 @@ Example usage:
             supp_models=args.supp_models,
             run_protein_kinase_analysis=not args.skip_pk,
         )
-    elif args.predict:
-        # Prediction mode
-        print(f"Using prediction mode; threshold: {args.threshold}")
+    elif use_predict_workflow:
+        print(f"Using default predictive workflow; threshold: {args.threshold}")
         
-        # Check prediction dependencies
         if DependencyChecker:
             checker = DependencyChecker()
             prediction_ok, error_msg = checker.check_prediction_dependencies()
             
             if not prediction_ok:
                 print(f"\n[ERROR] Prediction dependency checks failed: {error_msg}")
-                print("\nPrediction requires:")
-                print("  - PyTorch")
+                print("\nThe default workflow requires:")
+                print("  - torch")
                 print("  - matplotlib")
-                print("  - Model file (model.pth)")
-                print("  - Prediction script (predict.py)")
-                print("\nInstall PyTorch:")
-                print("  # CPU:")
-                print("  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu")
-                print("  # GPU (CUDA 11.8):")
-                print("  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
-                print("\nInstall plotting dependency:")
-                print("  pip install matplotlib")
-                print("  # More options: https://pytorch.org/get-started/locally/")
-                print("\nTip: If prediction is not needed, remove --predict to run analysis directly.")
+                print("  - pre_model/model.pth")
+                print("  - pre_model/predict.py")
+                print("\nInstall the default Python runtime with:")
+                print("  pip install -r requirements.txt")
+                print("\nOr use the direct fallback explicitly:")
+                print("  itak --no-predict -i input.fasta")
                 sys.exit(1)
             
             print("[OK] Prediction dependency checks passed")
@@ -2277,10 +2275,8 @@ Example usage:
             run_protein_kinase_analysis=not args.skip_pk,
         )
     else:
-        # Direct analysis mode
-        print("Using direct analysis mode (skipping prediction)")
+        print("Using direct fallback mode (--no-predict)")
         
-        # Grad-CAM requires prediction dependencies
         if args.grad_cam_mode != 'none':
             print(f"Note: Grad-CAM is enabled (mode: {args.grad_cam_mode}); the model will be executed to generate heatmaps")
             if DependencyChecker:
@@ -2335,7 +2331,7 @@ Example usage:
                 
                 if target_fasta:
                     cmd = [
-                        "python", str(PREDICT_SCRIPT),
+                        sys.executable, str(PREDICT_SCRIPT),
                         "--fasta", str(target_fasta),
                         "--threshold", str(args.threshold),
                         "--output", str(output_file),
@@ -2349,7 +2345,13 @@ Example usage:
                     
                     print(f"Executing Grad-CAM command: {' '.join(cmd)}")
                 
-                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=SCRIPT_DIR)
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        cwd=SCRIPT_DIR,
+                        env=build_runtime_env(SCRIPT_DIR) if build_runtime_env else None,
+                    )
                 
                     if result.returncode == 0:
                         print("Grad-CAM heatmaps generated successfully")

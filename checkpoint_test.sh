@@ -19,8 +19,8 @@ Options:
   --help             Show this help message
 
 Suites:
-  quick              Syntax + direct baseline + positive PK direct regression
-  full               quick + positive PK predict regression + positive PK debug regression
+  quick              Syntax + default predictive baseline + direct fallback PK regression
+  full               quick + predictive PK regression + list-predict + debug regression
 
 Examples:
   ./checkpoint_test.sh
@@ -110,23 +110,23 @@ run_step "Syntax Check" python -m py_compile \
   "$ROOT_DIR/module/output_contracts.py" \
   "$ROOT_DIR/module/runtime_tools.py"
 
-run_step "Direct Baseline" \
+run_step "Default Predict Baseline" \
   "$ROOT_DIR/smoke_test.sh" \
   --input "$ROOT_DIR/test_protein.fasta" \
   --appl "$APPL_LIST" \
-  --output "$OUTPUT_ROOT/direct_default"
+  --output "$OUTPUT_ROOT/default_predict"
 
-run_step "Direct PK Positive" \
+run_step "Direct Fallback PK Positive" \
   "$ROOT_DIR/smoke_test.sh" \
+  --no-predict \
   --input "$ROOT_DIR/test_protein_kinase.fasta" \
   --appl "$APPL_LIST" \
   --require-pk 2 \
-  --output "$OUTPUT_ROOT/direct_pk_positive"
+  --output "$OUTPUT_ROOT/direct_no_predict_pk_positive"
 
 if [[ "$SUITE" == "full" ]]; then
-  run_step "Predict PK Positive" \
+  run_step "Default Predict PK Positive" \
     "$ROOT_DIR/smoke_test.sh" \
-    --predict \
     --input "$ROOT_DIR/test_protein_kinase.fasta" \
     --appl "$APPL_LIST" \
     --require-pk 2 \
@@ -134,7 +134,6 @@ if [[ "$SUITE" == "full" ]]; then
 
   run_step "Predict PK Positive Without TF" \
     "${ITAK_CMD[@]}" \
-    --predict \
     -t 0.3 \
     -i "$ROOT_DIR/test_pk_no_tf_candidate.fasta" \
     --appl "$APPL_LIST" \

@@ -39,7 +39,6 @@ class DependencyChecker:
     
     def __init__(self, interproscan_path=None):
         self.missing_dependencies = []
-        self.missing_optional_dependencies = []
         self.warnings = []
         self.interproscan_path = None
         if interproscan_path:
@@ -66,10 +65,10 @@ class DependencyChecker:
             'warnings': 'warnings (standard library)'
         }
         
-        # Optional Python packages (needed for specific features)
-        self.optional_python_packages = {
-            'torch': 'PyTorch (required only for prediction)',
-            'matplotlib': 'matplotlib (required by prediction / Grad-CAM plotting)'
+        # Python packages required by the default predictive workflow
+        self.predict_python_packages = {
+            'torch': 'PyTorch (required by the default predictive prefilter workflow)',
+            'matplotlib': 'matplotlib (required by prediction reporting and Grad-CAM plotting)'
         }
         
         # Required external tools
@@ -442,6 +441,8 @@ class DependencyChecker:
         """
         print("Starting iTAK3 dependency checks...")
         print("=" * 60)
+
+        self.missing_dependencies = []
         
         all_dependencies_met = True
         
@@ -471,21 +472,21 @@ class DependencyChecker:
                 self.missing_dependencies.append(f"Python package: {package}")
                 all_dependencies_met = False
         
-        # Check optional Python packages used by prediction-related paths
-        print("\nOptional Python packages:")
-        for package, description in self.optional_python_packages.items():
-            if not check_predict:
-                continue
+        if check_predict:
+            print("\nDefault predictive workflow Python packages:")
+            for package, description in self.predict_python_packages.items():
+                if package == 'torch':
+                    print("  [INFO] Checking PyTorch (this may take a few seconds)...")
 
-            if package == 'torch':
-                print("  [INFO] Checking PyTorch (this may take a few seconds)...")
-            
-            if self.check_python_package(package):
-                print(f"  [OK] {package:<15} - {description}")
-            else:
-                print(f"  [WARN] {package:<15} - {description}")
-                self.missing_optional_dependencies.append(f"Python package: {package}")
-                print(f"      Note: missing {package} disables prediction")
+                if self.check_python_package(package):
+                    print(f"  [OK] {package:<15} - {description}")
+                else:
+                    print(f"  [ERROR] {package:<15} - {description}")
+                    self.missing_dependencies.append(f"Python package: {package}")
+                    all_dependencies_met = False
+        else:
+            print("\nDefault predictive workflow Python packages:")
+            print("  [SKIP] Prediction-related packages are not required for this run")
 
         # Additional check: Biopython core features
         print("\nBiopython feature checks:")
@@ -579,12 +580,6 @@ class DependencyChecker:
         print("\n" + "=" * 60)
         if all_dependencies_met:
             print("[OK] All required dependencies are satisfied. iTAK3 is ready to run.")
-            if self.missing_optional_dependencies:
-                print("[WARN] The following optional dependencies are missing; some features may be unavailable:")
-                for dep in self.missing_optional_dependencies:
-                    print(f"  - {dep}")
-                if check_predict:
-                    print("  Install PyTorch to enable prediction.")
         else:
             print("[ERROR] Missing required dependencies. Please install the following components:")
             for dep in self.missing_dependencies:
@@ -605,8 +600,9 @@ class DependencyChecker:
             for pkg in python_packages_missing:
                 if pkg == 'torch':
                     print("    PyTorch (choose a build appropriate for your system):")
-                    print("      CPU: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu")
-                    print("      GPU (CUDA): pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
+                    print("      Generic: pip install torch")
+                    print("      CPU: pip install torch --index-url https://download.pytorch.org/whl/cpu")
+                    print("      GPU (CUDA): pip install torch --index-url https://download.pytorch.org/whl/cu118")
                     print("      More options: https://pytorch.org/get-started/locally/")
                 elif pkg == 'matplotlib':
                     print("    pip install matplotlib")

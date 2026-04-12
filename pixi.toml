@@ -14,16 +14,11 @@ pip = "*"
 biopython = ">=1.83"
 pandas = ">=1.5"
 numpy = ">=1.23"
-
-[feature.predict.pypi-dependencies]
 torch = "*"
-torchvision = "*"
-torchaudio = "*"
 matplotlib = "*"
 
 [environments]
 default = { solve-group = "default" }
-predict = { features = ["predict"], solve-group = "default" }
 
 [tasks]
 configure-runtime = "python tools/configure_interproscan_runtime.py"

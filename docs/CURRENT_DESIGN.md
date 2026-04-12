@@ -7,11 +7,30 @@ transition notes and refactor plans where they disagree with the current codebas
 
 iTAK currently provides:
 
-- direct TF/TR analysis
-- prediction-assisted TF/TR analysis
+- prediction-assisted TF/TR analysis as the default workflow
+- direct TF/TR analysis as an explicit fallback
 - protein kinase identification and classification
 - bundled InterProScan-based domain annotation
 - repository-local and managed-environment execution through a single CLI
+
+## Meaning Of `--predict`
+
+`--predict` should be understood as a prefilter acceleration mode, not as a second independent
+analysis system.
+
+The current intended design is:
+
+- default invocation: first predict likely TF/TR candidates, then run the downstream domain/rule
+  workflow only on the predicted candidates
+- explicit fallback with `--no-predict`: run the downstream domain/rule workflow on all eligible
+  sequences
+
+So the deep-learning predictor is a front-end filter for the main analysis pipeline. Its purpose is
+to reduce the amount of expensive downstream scanning, not to replace the rule-based
+classification logic.
+
+`--predict` remains accepted as a legacy-compatible spelling of the default behavior, but it no
+longer changes the execution mode.
 
 ## Official Entrypoint
 

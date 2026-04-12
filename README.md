@@ -2,50 +2,53 @@
 # iTAK3 - Transcription Factor and Protein Kinase Analysis
 ---
 
-Overview
---------
-iTAK3 is a bioinformatics tool for transcription factor (TF) prediction and analysis. It integrates
-deep-learning-based preclassification with conventional sequence/domain analyses to identify and
-classify TFs from protein sequences. The current workflow also includes protein kinase (PK)
-identification and classification with bundled HMM profiles.
+## Overview
 
-Key Features
---------
-1. TF prediction: use a deep learning model to predict whether protein sequences are potential TF/TR sequences
-2. Domain analysis: run InterProScan and hmmscan for domain annotation
-3. TF family classification: assign TF families based on rule-based logic
-4. Protein kinase analysis: identify kinase domains and classify PKs with bundled Shiu/PPC models
-5. Output reporting: generate detailed reports and classified sequence FASTA files
+iTAK3 is a TF/TR/PK analysis pipeline for protein FASTA inputs. The current design uses a
+prediction-first workflow by default:
 
-System Requirements
---------
-- Python 3.7+
-- Java 11+ (required by InterProScan)
-- HMMER 3.0+ (hmmscan)
+1. preprocess input sequences into valid proteins
+2. predict likely TF/TR candidates with the bundled deep-learning model
+3. run InterProScan and hmmscan only on the predicted TF/TR candidates
+4. classify TF/TR families with rule-based logic
+5. classify protein kinases from the full processed protein FASTA
 
-Dependencies
-------
-Required Python packages:
-- Biopython (Bio)
+If needed, users can disable the predictive prefilter with `--no-predict` and force direct
+analysis on all eligible sequences.
+
+## Key Features
+
+1. Default predictive prefilter to reduce downstream InterProScan and hmmscan cost
+2. Direct fallback mode with `--no-predict`
+3. Rule-based TF/TR family classification
+4. Protein kinase identification and classification with bundled HMM assets
+5. Bundled iTAK-managed InterProScan runtime and slimmed database payload
+6. Grad-CAM heatmap generation from the prediction model
+
+## System Requirements
+
+- Python 3.10+
+- Java 11+
+- Perl
+- HMMER 3
+
+## Python Dependencies
+
+The default workflow requires:
+
+- biopython
 - pandas
 - numpy
-- Standard library: json, csv, argparse, subprocess, pathlib, os, sys, time, datetime, shutil
+- torch
+- matplotlib
 
-Optional Python packages:
-- PyTorch (required only for prediction)
+Install them with:
 
-External tools:
-- hmmscan (HMMER)
-- java (required by InterProScan)
+```bash
+pip install -r requirements.txt
+```
 
-Project Layout
---------
-## Key Scripts
-- `itak`: user-facing CLI entry point
-- `itak_cli.py`: internal CLI orchestrator (analysis / prediction / Grad-CAM orchestration)
-- `pre_model/predict.py`: deep-learning preclassification (+ Grad-CAM heatmaps)
-- `module/`: pipeline modules (FASTA processing, IPR JSON parsing, hmmscan processing, classification, checks)
-- `rule.txt`: TF family classification rules
+## Project Layout
 
 ```text
 itak3/
@@ -53,13 +56,6 @@ itak3/
 ├── itak_cli.py
 ├── docs/
 ├── module/
-│   ├── check_dependencies.py
-│   ├── validate_fasta.py
-│   ├── classification.py
-│   ├── get_fasta.py
-│   ├── get_json.py
-│   ├── get_rule.py
-│   └── selfbuild_hmm.py
 ├── pre_model/
 │   ├── model.pth
 │   ├── predict.py
@@ -68,279 +64,251 @@ itak3/
 │   ├── interproscan/
 │   ├── hmm_pk/
 │   └── hmm_self_build/
+├── runtime/
+├── tools/
 ├── rule.txt
-├── output/
-├── temp/
+├── requirements.txt
+├── smoke_test.sh
+├── checkpoint_test.sh
 ├── test_protein.fasta
-└── test_protein_kinase.fasta
+├── test_protein_kinase.fasta
+└── test_pk_no_tf_candidate.fasta
 ```
 
-Installation
---------
-## Requirements
-- Python 3.7+
-- Java 11+ (InterProScan)
-- HMMER 3.0+ (`hmmscan`)
-- PyTorch (only if you use `--predict` / `--list-predict` / `--grad-cam-mode`)
+## Installation
 
-## Recommended setup: pixi
+### Recommended setup: pixi
+
 ```bash
 pixi run configure-runtime
 ```
 
-Primary entrypoint after setup:
+After setup, use:
+
 ```bash
 ./itak
 ```
 
-You can also run the CLI through the managed pixi environment:
+or:
+
 ```bash
 pixi run itak --help
 ```
 
-The `itak` entrypoint now uses the current Python environment directly. It no longer auto-reexecs into a repository `.venv`.
+Useful pixi tasks:
 
-Common pixi tasks:
 ```bash
-# inspect current runtime status
 pixi run runtime-status
-
-# validate engine + iTAK data + minimal self-test without writing config
 pixi run runtime-check
-
-# run dependency checks through the managed environment
 pixi run check-deps
-
-# run the repository smoke test directly
 pixi run smoke-test
-
-# quick regression suite
 pixi run checkpoint-quick
 ```
 
-`pixi run configure-runtime` will:
-- generate `db/interproscan/interproscan.local.properties`
-- validate the bundled InterProScan engine layout together with the iTAK-managed data layout
-- configure the bundled `db/interproscan` runtime
-- activate iTAK helper binaries on macOS when required
-- run a minimal `interproscan.sh -version` self-test
-- record the Python and Perl executables from the current pixi environment
+### Existing Python / conda / bioconda environment
 
-## Alternative setup: existing Python / conda / bioconda environment
-If you already created an environment yourself, install the Python packages there and run the runtime configurator explicitly.
+If you already manage your own environment, install the Python packages there and then configure
+the bundled InterProScan runtime:
 
 ```bash
-pip install -r requirements-core.txt
-```
-
-Optional prediction packages:
-```bash
-# CPU
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# Apple Silicon / Metal
-pip install torch torchvision torchaudio
-
-# GPU (CUDA)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-Then configure the runtime:
-```bash
+pip install -r requirements.txt
 python3 tools/configure_interproscan_runtime.py
 python3 tools/configure_interproscan_runtime.py --status
 python3 tools/configure_interproscan_runtime.py --check
 ```
 
-## Deprecated bootstrap script
-- `install_runtime.sh` is retired and now exits with a migration message.
-- `tools/install_runtime.py` has been removed from the recommended workflow; use `pixi` or `tools/configure_interproscan_runtime.py` instead.
+## Runtime Policy
 
-## InterProScan Database (db/)
+- The only official entrypoint is `itak`.
+- `itak3-v1.0.py`, `run_itak3_local.sh`, and `tools/install_runtime.py` are retired.
+- `install_runtime.sh` is only a migration stub.
+- iTAK does not auto-switch into a repository `.venv`.
+- iTAK always uses the bundled `db/interproscan`.
+- External InterProScan paths are intentionally unsupported.
+
+## Database Policy
+
+### InterProScan
+
 - iTAK does not use the official full InterProScan data package.
-- `db/interproscan/` is an iTAK-managed bundled runtime for TF/TR/PK workflows.
-- Users should not point iTAK at an external InterProScan installation.
+- `db/interproscan/` is an iTAK-managed runtime plus slimmed database payload for TF/TR/PK
+  workflows.
+- This bundled payload is the only supported InterProScan database source.
 
-## TF/TR HMM database (`db/hmm_self_build`)
-- iTAK3 bundles the TF/TR self-build HMM database under `db/hmm_self_build/`.
-- The main hmmscan stage uses `db/hmm_self_build/self_build.hmm`.
+### TF/TR hmmscan database
 
-## Protein kinase database (`db/hmm_pk`)
-- iTAK3 bundles a reduced protein kinase HMM database under `db/hmm_pk/`.
-- This PK workflow uses `hmmscan` only; it does not depend on InterProScan.
-- Required profiles include `Tfam_domain.hmm`, `Plant_Pkinase_fam.hmm`, `PlantsPHMM3_89.hmm`,
-  `Pkinase_sub_WNK1.hmm`, `Pkinase_sub_MAK.hmm`, plus `GA_table.txt` and `PK_class_desc.txt`.
+- `db/hmm_self_build/self_build.hmm`
 
-## Deploy / Install from GitHub
-```bash
-git clone https://github.com/Enver-Kastrioti/itak2_9.19.git
-```
+### Protein kinase database
 
-## Project Documentation
-- Current design reference: [docs/CURRENT_DESIGN.md](/Users/kentnf/projects/cornell/itak2_9.19/docs/CURRENT_DESIGN.md)
+- `db/hmm_pk/`
+
+## Documentation
+
+- Current design: [docs/CURRENT_DESIGN.md](/Users/kentnf/projects/cornell/itak2_9.19/docs/CURRENT_DESIGN.md)
 - Documentation index: [docs/README.md](/Users/kentnf/projects/cornell/itak2_9.19/docs/README.md)
 
-Usage
---------
+## Usage
 
-## Entry point
-- Installed or repository-local usage should go through `itak`.
-- In a cloned repository, invoke it as `./itak` or `pixi run itak`.
+### Syntax
 
-## Syntax
 ```bash
-itak [options] -i <input_file>
+itak [options] -i <input.fasta>
 ```
 
-Repository-local invocation after cloning the repo:
+Repository-local usage:
+
 ```bash
-./itak [options] -i <input_file>
+./itak [options] -i <input.fasta>
 ```
 
-## Primary arguments
-- `--version`: Show the CLI version and exit
-- `-i, --input`: Input FASTA file path (required except with --check-deps)
-- `-o, --output`: Output directory path (optional; default: output/<input_basename>/)
-- `-t, --threshold`: Prediction threshold in [0,1] (default: 0.1; affects prediction only)
-- `--score`: Score threshold for InterProScan and hmmscan-derived domain-hit filtering (default: 1.0)
-- `--classification-mode`: Classification mode: specific (specificity-first) or score (score-first, default)
+### Primary arguments
 
-Feature options:
-- -test, --test-mode      Test mode: skip InterProScan/hmmscan and validate classification using existing result files
-- -json, --json-file      InterProScan JSON result file for test mode
-- -spechmm, --spechmm-file hmmscan result file (result.tbl) for test mode
-- --predict               Enable prediction: run model inference, then analyze predicted TF sequences
-- --predict-mode          Prediction splitting mode: fast (default) or full
-- --use-supplementary     Enable supplementary models (optional)
-- --supplementary-only    Use supplementary models only; skip the main model
-- --supp-models           Optional: specify supplementary model files (multiple allowed); if omitted, use all models in the directory
-- --grad-cam-mode         Grad-CAM mode: none (default)/fast/all/positive (all/positive require --predict; --list-predict still unsupported)
-- --appl                  InterProScan application list (comma-separated; defaults to common libraries)
-- --skip-pk               Skip protein kinase identification/classification
-- --debug                 Enable debug outputs (default: off)
+- `-i, --input`: input FASTA file
+- `-o, --output`: output directory
+- `-t, --threshold`: prediction threshold in `[0, 1]` for TF/TR prefiltering
+- `--appl`: InterProScan application list
+- `--score`: score threshold for InterProScan and hmmscan-derived domain filtering
+- `--classification-mode`: `specific` or `score`
+- `--skip-pk`: skip protein kinase classification
+- `--debug`: write additional intermediate outputs
 
-Dependency checks:
---check-deps            Check dependencies and exit
---skip-deps-check       Skip dependency checks (not recommended)
+### Workflow selection
 
-Examples
---------
+- default: prediction-first workflow
+- `--no-predict`: direct fallback mode
+- `--predict`: legacy alias for the default workflow
+- `--list-predict`: run prediction once and emit multiple threshold-specific outputs
 
-1. Basic analysis (analyze input directly):
-   itak -i test_protein.fasta
+### Model-related options
 
-2. Prediction workflow:
-   itak --predict -i test_protein.fasta -t 0.1
+- `--predict-mode`: `fast` or `full`
+- `--use-supplementary`: add supplementary prediction models
+- `--supplementary-only`: skip the main model and use supplementary models only
+- `--supp-models`: explicit supplementary model paths
+- `--grad-cam-mode`: `none`, `all`, `positive`, or `fast`
 
-3. Specify an output directory:
-   itak --predict -i test_protein.fasta -o /path/to/output
+### Validation and test options
 
-4. Enable debug mode:
-   itak --predict -i test_protein.fasta --debug
+- `--check-deps`: validate the default runtime and exit
+- `--skip-deps-check`: skip dependency validation
+- `-test, --test-mode`: use existing InterProScan JSON and hmmscan outputs
+- `-json, --json-file`: InterProScan JSON for test mode
+- `-spechmm, --spechmm-file`: hmmscan result file for test mode
 
-5. Restrict InterProScan applications:
-   itak -i test_protein.fasta --appl CDD,Pfam,SMART
+## Examples
 
-6. Test mode:
-   itak -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
+### Default predictive workflow
 
-7. Check dependencies:
-   itak --check-deps
+```bash
+itak -i test_protein.fasta
+```
 
-8. Use supplementary models (requires --predict):
-   itak --predict --use-supplementary -i input.fasta
-   itak --predict --supplementary-only -i input.fasta
-   itak --predict --use-supplementary --supp-models a.pth b.pth -i input.fasta
+### Default workflow with an explicit threshold
 
-9. Grad-CAM heatmaps (requires --predict):
-   - fast: runs after classification, using the classified TF FASTA under result/ (batch mode)
-   - all: runs on the original input FASTA (all sequences)
-   itak --predict --grad-cam-mode fast -i input.fasta
-   itak --predict --grad-cam-mode all -i input.fasta
+```bash
+itak -i test_protein.fasta -t 0.1
+```
 
-10. Skip protein kinase analysis:
-   itak -i test_protein.fasta --skip-pk
+### Direct fallback workflow
 
-11. Run a positive protein kinase example:
-   itak -i test_protein_kinase.fasta --skip-deps-check
+```bash
+itak --no-predict -i test_protein.fasta
+```
 
-12. Run a positive protein kinase smoke test:
-   ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
+### Specify an output directory
 
-13. Run prediction mode with a positive protein kinase sample:
-   ./smoke_test.sh --predict --input test_protein_kinase.fasta --require-pk 2
+```bash
+itak -i test_protein.fasta -o /path/to/output
+```
 
-14. Run list-predict mode with shared protein kinase analysis across thresholds:
-   itak --list-predict -i test_pk_no_tf_candidate.fasta -o /path/to/list_predict_out
+### Restrict InterProScan applications
 
-Outputs
---------
-The program creates the following files and directories under the output directory:
+```bash
+itak -i test_protein.fasta --appl CDD,Pfam,SMART
+```
+
+### Use supplementary models
+
+```bash
+itak --use-supplementary -i input.fasta
+itak --supplementary-only -i input.fasta
+itak --use-supplementary --supp-models a.pth b.pth -i input.fasta
+```
+
+### Grad-CAM
+
+```bash
+itak --grad-cam-mode fast -i input.fasta
+itak --grad-cam-mode all -i input.fasta
+```
+
+### Test mode
+
+```bash
+itak -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
+```
+
+### Dependency check
+
+```bash
+itak --check-deps
+```
+
+### Smoke tests
+
+```bash
+./smoke_test.sh
+./smoke_test.sh --no-predict
+./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
+./checkpoint_test.sh --suite quick
+./checkpoint_test.sh --suite full
+```
+
+## Outputs
+
+The pipeline writes results under the chosen output directory:
 
 ```text
-<project_output>/                          # Project output directory (default: output/<input_basename>/)
-├── protein_model_preclassification/       # Prediction outputs (only with --predict/--list-predict)
-│   ├── <name>_prediction.csv              # Predictions for all sequences
-│   ├── <name>_prediction_tf_only.csv      # Subset with TF_Probability >= threshold
-│   └── <name>_tf_sequences.fasta          # Extracted TF sequences (may be empty at stricter thresholds)
-├── InterproScan/                          # InterProScan output directory
+<project_output>/
+├── protein_model_preclassification/
+│   ├── <name>_prediction.csv
+│   ├── <name>_prediction_tf_only.csv
+│   └── <name>_tf_sequences.fasta
+├── InterproScan/
 │   └── <input>.json
-├── hmmscan/                               # hmmscan output directory
+├── hmmscan/
 │   └── result.tbl
-├── protein_kinase/                        # Protein kinase outputs (default direct/predict/--list-predict modes unless --skip-pk)
-│   ├── match.json                         # Debug output (--debug): PK classification JSON in the same schema as TF/TR match.json
-│   ├── <name>_pk_classified.fasta         # Classified PK sequences in the same header style as TF classified FASTA
-│   ├── pk_classification.tsv              # Primary PK classification table
-│   ├── shiu_classification.txt            # Shiu class summary
-│   └── PPC_classification.txt             # PPC class summary
-├── getrule.json                           # Debug output (--debug): parsed classification rules
-└── result/                                # Classification results
-    ├── match_tbl.txt                      # Final TF family classification results (table)
-    ├── all_match_tbl.txt                  # Debug output (--debug): combined TF/TR + protein kinase summary table
-    ├── <name>_tf_classified.fasta         # Classified TF sequences
-    ├── match.json                         # Debug output (--debug)
-    ├── processed_ipr_domains.json         # Domain architecture JSON (sequence ↔ domain hits; optional)
-    └── pfamspec.json                      # PFAM spec JSON used for classification (optional; written with --debug)
+├── protein_kinase/
+│   ├── <name>_pk_classified.fasta
+│   ├── pk_classification.tsv
+│   ├── shiu_classification.txt
+│   ├── PPC_classification.txt
+│   └── match.json
+├── getrule.json
+└── result/
+    ├── match_tbl.txt
+    ├── all_match_tbl.txt
+    ├── <name>_tf_classified.fasta
+    ├── match.json
+    ├── processed_ipr_domains.json
+    └── pfamspec.json
 ```
 
-Grad-CAM outputs:
-- Written to `<project_output>/<name>_gradcam/` by default, with one PNG per sequence (only when --grad-cam-mode is enabled)
+Notes:
 
-Workflow
---------
-1. Input validation: validate FASTA structure and mixed protein/CDS inputs
-2. Dependency checks: verify required tools and libraries
-3. Input preprocessing: keep valid proteins and translate nucleotide entries through complete-ORF extraction
-4. Prediction stage (optional): run deep learning model inference for TF preclassification
-5. Protein kinase analysis: run bundled PK HMMs on the processed protein FASTA
-6. Domain analysis: run InterProScan and hmmscan
-7. Result processing: parse and filter analysis outputs
-8. TF family classification: apply rule-based family assignment
-9. Output reporting: write classification reports and FASTA files
+- `protein_model_preclassification/` is produced by the default predictive workflow, `--list-predict`,
+  or Grad-CAM runs.
+- `match.json`, `all_match_tbl.txt`, `getrule.json`, `processed_ipr_domains.json`, and `pfamspec.json`
+  are debug-oriented outputs and may be absent unless `--debug` is enabled.
 
-FAQ / Troubleshooting
---------
+## Workflow Summary
 
-1) db download / preparation failed (timeout / network error)
-   - Download `db.tar.gz` manually, then place it in the project root (same directory as `itak` and `itak_cli.py`).
-   - Re-run the program (it will try to extract / prepare db assets automatically), or extract manually:
-     ```bash
-     tar -xzf db.tar.gz
-     ```
-
-2) "Dependency checks failed"
-   - Ensure Python packages are installed and `java` / `hmmscan` are available on PATH.
-   - Run:
-     ```bash
-     itak --check-deps
-     ```
-
-3) "FASTA validation failed"
-   - Ensure input is valid FASTA and sequences are proteins.
-   - Remove `*` (stop codon) and unexpected characters.
-
-4) "InterProScan failed"
-   - Check `java -version`, disk space, and the integrity of `db/interproscan/`.
-
-5) "Prediction is unavailable" / Grad-CAM not working
-   - Install PyTorch and ensure `pre_model/model.pth` and `pre_model/predict.py` exist.
+1. Validate the input FASTA
+2. Validate runtime dependencies
+3. Preprocess input sequences into proteins
+4. Run the default predictive prefilter unless `--no-predict` is used
+5. Run protein kinase classification on the processed protein FASTA
+6. Run InterProScan and hmmscan for TF/TR analysis
+7. Apply rule-based TF/TR classification
+8. Write reports, tables, and classified FASTA outputs
