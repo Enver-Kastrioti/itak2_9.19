@@ -186,8 +186,11 @@ def process_ipr_groups(gene_data, gene_id, output_dir, debug=False, score_thresh
             # Append processed matches
             final_matches.extend([
                 {
+                    "ipr": ipr,
+                    "ipr_name": m.get("ipr_name", "null"),
                     "accession": m["accession"],
                     "library": m["library"],
+                    "description": m.get("description", "null"),
                     "start": m["start"],
                     "end": m["end"],
                     "evalue": m["evalue"],

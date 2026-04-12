@@ -323,16 +323,17 @@ The pipeline writes results under the chosen output directory:
 
 ```text
 <project_output>/
+├── <input>_protein_replaced.fasta
 ├── protein_model_preclassification/
 │   ├── <name>_prediction.csv
 │   ├── <name>_prediction_tf_only.csv
-│   └── <name>_tf_sequences.fasta
+│   └── <name>_protein_replaced_tf_sequences.fasta
 ├── InterproScan/
-│   └── <input>.json
+│   └── <input>_protein_replaced_tf_sequences.fasta.json
 ├── hmmscan/
 │   └── result.tbl
 ├── protein_kinase/
-│   ├── <name>_pk_classified.fasta
+│   ├── <input>_protein_replaced_pk_classified.fasta
 │   ├── pk_classification.tsv
 │   ├── shiu_classification.txt
 │   ├── PPC_classification.txt
@@ -340,8 +341,9 @@ The pipeline writes results under the chosen output directory:
 ├── getrule.json
 └── result/
     ├── match_tbl.txt
+    ├── tftr_domain_evidence.tsv
     ├── all_match_tbl.txt
-    ├── <name>_tf_classified.fasta
+    ├── <input>_protein_replaced_tf_sequences_tf_classified.fasta
     ├── match.json
     ├── processed_ipr_domains.json
     └── pfamspec.json
@@ -349,6 +351,12 @@ The pipeline writes results under the chosen output directory:
 
 Notes:
 
+- `<input>_protein_replaced.fasta` is the normalized protein FASTA used by downstream steps.
+- `result/match_tbl.txt` is the main TF/TR result table. It now keeps the classic one-row-per-sequence format
+  but also includes evidence-oriented columns such as `Rule_ID`, `Matched_IPR_IDs`,
+  `Matched_Accessions`, `Matched_Libraries`, `Matched_Domain_Count`, and `Evidence_Summary`.
+- `result/tftr_domain_evidence.tsv` is the detailed TF/TR evidence table. It writes one domain hit per row
+  and is intended for downstream HTML/report generation.
 - `protein_model_preclassification/` is produced by the default predictive workflow or Grad-CAM runs.
 - `match.json`, `all_match_tbl.txt`, `getrule.json`, `processed_ipr_domains.json`, and `pfamspec.json`
   are debug-oriented outputs and may be absent unless `--debug` is enabled.

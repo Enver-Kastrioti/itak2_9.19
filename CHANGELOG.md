@@ -38,6 +38,8 @@
 - Added a unified user-facing `--cpu` parameter and wired it through prediction, InterProScan, hmmscan, and protein kinase classification, with automatic capping at the machine CPU-thread limit.
 - Tightened prediction CPU control in `pre_model/predict.py` so thread-related environment variables are set before importing `torch`/`numpy`, and vectorized the one-hot encoding path used during prediction.
 - On macOS, kept prediction in a single-process data-loading mode while still honoring `--cpu` for model inference threads; this avoids the heavy `spawn` overhead of automatic `DataLoader` workers on that platform.
+- Expanded TF/TR outputs so `result/match_tbl.txt` now carries classification evidence columns, and added `result/tftr_domain_evidence.tsv` for detailed InterProScan/self-build HMM hit reporting suitable for downstream HTML/report rendering.
+- Preserved InterProScan `ipr`, `ipr_name`, and description metadata through filtering so TF/TR evidence outputs now contain human-readable domain descriptions instead of only accessions.
 - Updated `smoke_test.sh` and `checkpoint_test.sh` to accept `--cpu` and forward it to `itak`.
 - Consolidated project documentation under `docs/`, added a canonical current-design document, and moved transitional planning notes into `docs/archive/`.
 - Moved the TF/TR self-build HMM database into `db/hmm_self_build/` and renamed the protein kinase HMM bundle directory to `db/hmm_pk/`.
@@ -74,6 +76,7 @@
 - `pixi run -- ./itak --no-predict --cpu 999 -i output/checkpoints/cli_surface_cleanup/generated_fixtures/test_pk_no_tf_candidate.fasta --appl PROSITEPROFILES -o output/cpu_cap_direct_check`
 - `PYTHONUNBUFFERED=1 /usr/bin/time -p -o output/benchmarks/predict_100_cpu1.time pixi run -- python pre_model/predict.py --fasta output/benchmarks/dataset01_protein_first100.fa --threshold 0.5 --output output/benchmarks/predict_100_cpu1.csv --cpu 1 --progress-every 10`
 - `PYTHONUNBUFFERED=1 /usr/bin/time -p -o output/benchmarks/predict_100_cpu8.time pixi run -- python pre_model/predict.py --fasta output/benchmarks/dataset01_protein_first100.fa --threshold 0.5 --output output/benchmarks/predict_100_cpu8.csv --cpu 8 --progress-every 10`
+- `pixi run -- ./itak -i test_protein.fasta --appl PROSITEPROFILES --cpu 8 -o output/tftr_evidence_contract_check`
 - `bash -n smoke_test.sh checkpoint_test.sh`
 
 ### Relevant commits

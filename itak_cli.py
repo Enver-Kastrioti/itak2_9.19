@@ -816,6 +816,7 @@ def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered
                 if write_tftr_outputs is not None and records_to_classification_result is not None:
                     written_outputs = write_tftr_outputs(normalized_records, result_dir, debug=debug)
                     tbl_path = written_outputs["table"]
+                    evidence_tsv_path = written_outputs.get("evidence_tsv")
                     json_path = written_outputs.get("json")
                 else:
                     tbl_path = os.path.join(result_dir, 'match_tbl.txt')
@@ -824,6 +825,9 @@ def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered
                             desc_str = ';'.join(data['desc']) if data['desc'] else 'NA'
                             line = f"{gene_id}\t{data['name']}\t{data['family']}\t{data['type']}\t{desc_str}\t{data['other_family']}\n"
                             f.write(line)
+                    evidence_tsv_path = os.path.join(result_dir, "tftr_domain_evidence.tsv")
+                    with open(evidence_tsv_path, "w", encoding="utf-8") as f:
+                        f.write("Sequence_ID\tEvidence_Source\tDomain_Key\tIPR\tAccession\tLibrary\tDescription\tStart\tEnd\tScore\tEvalue\n")
                     json_path = os.path.join(result_dir, 'match.json') if debug else None
                     if debug:
                         with open(json_path, 'w', encoding='utf-8') as f:
@@ -866,7 +870,8 @@ def run_class_tf_module(fasta_file, rule_file, result_dir, debug=False, filtered
                     print("classification completed (in-memory)")
                     print("Results saved to:")
                     print(f"  Table: {tbl_path}")
-                
+                    print(f"  Evidence: {evidence_tsv_path}")
+
                 return True, normalized_records if build_tftr_match_record is not None else classification_result
             else:
                 print("classification processing failed")
@@ -1594,9 +1599,15 @@ def write_empty_tf_tr_outputs_step(context, debug=False, step_number=None):
     if write_tftr_outputs is not None:
         written_outputs = write_tftr_outputs({}, context.result_dir, debug=debug)
         match_tbl_path = written_outputs["table"]
+        evidence_tsv_path = written_outputs.get("evidence_tsv")
     else:
         match_tbl_path = context.result_dir / "match_tbl.txt"
         match_tbl_path.write_text("", encoding="utf-8")
+        evidence_tsv_path = context.result_dir / "tftr_domain_evidence.tsv"
+        evidence_tsv_path.write_text(
+            "Sequence_ID\tEvidence_Source\tDomain_Key\tIPR\tAccession\tLibrary\tDescription\tStart\tEnd\tScore\tEvalue\n",
+            encoding="utf-8",
+        )
 
     classified_fasta_path = context.result_dir / f"{context.tf_fasta.stem}_tf_classified.fasta"
     classified_fasta_path.write_text("", encoding="utf-8")
@@ -1612,6 +1623,7 @@ def write_empty_tf_tr_outputs_step(context, debug=False, step_number=None):
     print("No TF sequences met the prediction threshold; wrote empty TF/TR outputs")
     print(f"TF FASTA: {context.tf_fasta}")
     print(f"Classification table: {match_tbl_path}")
+    print(f"Evidence table: {evidence_tsv_path}")
     print(f"Classified FASTA: {classified_fasta_path}")
     if debug:
         print(f"Classification JSON: {context.result_dir / 'match.json'}")
