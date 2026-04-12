@@ -160,39 +160,84 @@ Repository-local usage:
 ./itak [options] -i <input.fasta>
 ```
 
-### Primary arguments
+### Common user arguments
 
-- `-i, --input`: input FASTA file
-- `-o, --output`: output directory
-- `-t, --threshold`: prediction threshold in `[0, 1]` for TF/TR prefiltering
-- `--appl`: InterProScan application list
-- `--score`: score threshold for InterProScan and hmmscan-derived domain filtering
-- `--classification-mode`: `specific` or `score`
-- `--skip-pk`: skip protein kinase classification
-- `--debug`: write additional intermediate outputs
+- `-i, --input`: input FASTA file. Protein FASTA is preferred. Nucleotide FASTA is also accepted and will first be converted into protein sequences by ORF extraction when possible.
+- `--cpu`: CPU threads used by prediction, InterProScan, and hmmscan. Values above the system limit are capped automatically.
+- `-o, --output`: output directory for all results. If omitted, iTAK creates `<input_basename>_output` in the current working directory.
+- `-t, --threshold`: TF/TR prediction cutoff in `[0, 1]`. Higher values are stricter; default is `0.5`.
+- default workflow: prediction-first analysis. iTAK first filters likely TF/TR candidates, then runs the downstream domain/rule workflow.
+- `--no-predict`: disable the prediction-first acceleration step and analyze all eligible sequences directly.
+- `--check-deps`: check whether required Python packages, bundled databases, and external tools are ready, then exit.
 
-### Workflow selection
+### Developer parameters
 
-- default: prediction-first workflow
-- `--no-predict`: direct fallback mode
-- `--predict`: legacy alias for the default workflow
-- `--list-predict`: run prediction once and emit multiple threshold-specific outputs
+- `--appl`
+  Why it exists: to limit which InterProScan libraries run during development or troubleshooting.
+  What it changes: the library list passed to bundled InterProScan.
+  Use it when: you want faster debug runs or are isolating a library-specific issue.
+  Ordinary users: should not change it.
+- `--score`
+  Why it exists: to tune domain-hit filtering during rule development.
+  What it changes: low-scoring InterProScan and hmmscan hits are filtered before classification.
+  Use it when: you are debugging borderline hits or recalibrating family rules.
+  Ordinary users: should not change it.
+- `--classification-mode`
+  Why it exists: to compare two rule-resolution strategies when multiple families match.
+  What it changes: `specific` prefers more specific/complex rules; `score` prefers the highest-scoring matched rule.
+  Use it when: you are evaluating rule behavior or investigating family conflicts.
+  Ordinary users: should not change it.
+- `--debug`
+  Why it exists: to keep intermediate files for diagnosis.
+  What it changes: writes extra JSON and trace-style outputs such as `getrule.json`, `match.json`, `pfamspec.json`, and overlap logs.
+  Use it when: you need to inspect why a sequence was or was not classified.
+  Ordinary users: usually do not need it.
 
-### Model-related options
+### Developer model parameters
 
-- `--predict-mode`: `fast` or `full`
-- `--use-supplementary`: add supplementary prediction models
-- `--supplementary-only`: skip the main model and use supplementary models only
-- `--supp-models`: explicit supplementary model paths
-- `--grad-cam-mode`: `none`, `all`, `positive`, or `fast`
+- `--predict-mode`
+  Why it exists: to switch the sequence-splitting strategy used by the predictor.
+  What it changes: `fast` uses a lighter chunking strategy; `full` uses broader coverage and is slower.
+  Use it when: you are checking whether long-sequence handling changes prediction behavior.
+  Ordinary users: should keep the default.
+- `--use-supplementary`
+  Why it exists: to test whether supplementary models improve recovery beyond the main model.
+  What it changes: adds supplementary-model inference on top of the main predictive pass.
+  Use it when: you are running model comparison experiments.
+  Ordinary users: should not use it.
+- `--supplementary-only`
+  Why it exists: to run an ablation using only supplementary models.
+  What it changes: skips the main model entirely.
+  Use it when: you are validating supplementary-model behavior in isolation.
+  Ordinary users: should not use it.
+- `--supp-models`
+  Why it exists: to point the predictor at a custom subset of supplementary model files.
+  What it changes: overrides automatic supplementary-model discovery.
+  Use it when: you are comparing specific experimental model files.
+  Ordinary users: should not use it.
+- `--grad-cam-mode`
+  Why it exists: to inspect which sequence regions the predictor is using.
+  What it changes: generates Grad-CAM heatmaps during or after prediction.
+  Use it when: you are doing model interpretation or debugging suspicious predictions.
+  Ordinary users: should not use it.
 
-### Validation and test options
+### Developer validation parameters
 
-- `--check-deps`: validate the default runtime and exit
-- `--skip-deps-check`: skip dependency validation
-- `-test, --test-mode`: use existing InterProScan JSON and hmmscan outputs
-- `-json, --json-file`: InterProScan JSON for test mode
-- `-spechmm, --spechmm-file`: hmmscan result file for test mode
+- `--skip-deps-check`
+  Why it exists: to bypass startup checks during development.
+  What it changes: skips validation of Python packages, bundled databases, and external tools before running.
+  Use it when: you intentionally want to probe a partial environment.
+  Ordinary users: should not use it.
+- `--list-predict`
+  Why it exists: to test one prediction pass against multiple thresholds without rerunning the model each time.
+  What it changes: generates multiple threshold-specific output directories from a shared cached prediction run.
+  Use it when: you are evaluating threshold sensitivity or running regression tests.
+  Ordinary users: should not use it.
+- `--test-mode`, `--json-file`, `--spechmm-file`
+  Why they exist: to validate downstream classification logic without rerunning InterProScan and hmmscan.
+  What they change: the pipeline reads existing scan outputs and jumps directly into the classification path.
+  Use them when: you are debugging `get_json.py`, `selfbuild_hmm.py`, `classification.py`, or rule changes.
+  Ordinary users: should not use them.
 
 ## Examples
 
@@ -208,7 +253,7 @@ and non-regulatory proteins together.
 ### Default workflow with an explicit threshold
 
 ```bash
-itak -i test_protein.fasta -t 0.1
+itak -i test_protein.fasta -t 0.5
 ```
 
 ### Direct fallback workflow
@@ -221,6 +266,12 @@ itak --no-predict -i test_protein.fasta
 
 ```bash
 itak -i test_protein.fasta -o /path/to/output
+```
+
+### Use more CPU threads
+
+```bash
+itak -i test_protein.fasta --cpu 8
 ```
 
 ### Restrict InterProScan applications
@@ -298,8 +349,7 @@ The pipeline writes results under the chosen output directory:
 
 Notes:
 
-- `protein_model_preclassification/` is produced by the default predictive workflow, `--list-predict`,
-  or Grad-CAM runs.
+- `protein_model_preclassification/` is produced by the default predictive workflow or Grad-CAM runs.
 - `match.json`, `all_match_tbl.txt`, `getrule.json`, `processed_ipr_domains.json`, and `pfamspec.json`
   are debug-oriented outputs and may be absent unless `--debug` is enabled.
 

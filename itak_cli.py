@@ -217,27 +217,49 @@ def format_duration(seconds):
         remaining_seconds = seconds % 60
         return f"{hours} h {remaining_minutes} min {remaining_seconds:.2f} s"
 
+def get_available_cpu_count():
+    return max(1, os.cpu_count() or 1)
+
+
+def validate_cpu_count(value):
+    try:
+        cpu = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("CPU count must be an integer")
+    if cpu < 1:
+        raise argparse.ArgumentTypeError("CPU count must be at least 1")
+    return cpu
+
+
+def resolve_cpu_count(requested_cpu=None, stage_label="requested"):
+    available_cpu = get_available_cpu_count()
+    if requested_cpu is None:
+        return min(4, available_cpu)
+    if requested_cpu > available_cpu:
+        print(f"[WARN] {stage_label} CPU count {requested_cpu} exceeds available CPU threads {available_cpu}; using {available_cpu} instead")
+        return available_cpu
+    return requested_cpu
+
+
+def _default_output_dir_candidates(fasta_file):
+    stem = Path(fasta_file).stem
+    base = Path.cwd() / f"{stem}_output"
+    yield base
+
+    counter = 1
+    while True:
+        yield base.parent / f"{base.name}_{counter}"
+        counter += 1
+
 def setup_project_output(fasta_file, output=None):
 
     if output:
         project_output = Path(output)
     else:
-        # Use default output directory structure
-        fasta_path = Path(fasta_file)
-        base_name = fasta_path.stem
-        output_base = SCRIPT_DIR / "output"
-        
-        # Create a unique output directory
-        counter = 0
-        while True:
-            if counter == 0:
-                project_output = output_base / base_name
-            else:
-                project_output = output_base / f"{base_name}_{counter}"
-            
+        for candidate in _default_output_dir_candidates(fasta_file):
+            project_output = candidate
             if not project_output.exists():
                 break
-            counter += 1
     
     # Create output directory
     project_output.mkdir(parents=True, exist_ok=True)
@@ -366,6 +388,7 @@ def _build_prediction_command(
     threshold,
     output_csv,
     project_output,
+    cpu=None,
     predict_mode="fast",
     debug=False,
     use_supplementary=False,
@@ -389,6 +412,8 @@ def _build_prediction_command(
         str(Path(project_output).absolute()),
         "--mode",
         predict_mode,
+        "--cpu",
+        str(resolve_cpu_count(cpu, stage_label="Prediction")),
     ]
 
     if supplementary_only:
@@ -459,11 +484,14 @@ def resolve_existing_project_output(fasta_file, output=None):
     if output:
         return Path(output)
 
-    output_base = SCRIPT_DIR / "output"
     stem = Path(fasta_file).stem
-    candidates = [p for p in output_base.glob(f"{stem}*") if p.is_dir()]
+    base = Path.cwd() / f"{stem}_output"
+    candidates = [
+        p for p in base.parent.glob(f"{base.name}*")
+        if p.is_dir() and (p.name == base.name or p.name.startswith(base.name + "_"))
+    ]
     if not candidates:
-        return output_base / stem
+        return base
     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return candidates[0]
 
@@ -939,9 +967,9 @@ def _get_or_create_processed_fasta(fasta_file, output_dir):
     return str(_ensure_processed_fasta(context))
 
 
-def _run_protein_kinase_analysis(fasta_file, project_output, enabled=True, debug=False):
+def _run_protein_kinase_analysis(fasta_file, project_output, cpu=None, enabled=True, debug=False):
     if not enabled:
-        print("Protein kinase analysis skipped (--skip-pk)")
+        print("Protein kinase analysis skipped")
         return True
 
     result = call_module_function(
@@ -949,6 +977,7 @@ def _run_protein_kinase_analysis(fasta_file, project_output, enabled=True, debug
         "run_protein_kinase_pipeline",
         str(fasta_file),
         str(project_output),
+        cpu=cpu,
         debug=debug,
     )
     if not isinstance(result, dict) or not result.get("success"):
@@ -1065,12 +1094,13 @@ def _copy_cached_pk_outputs(cache_context, child_context, enabled):
         return False
     return True
 
-def _run_prediction_once(fasta_file, threshold, output_csv, project_output, predict_mode="fast", debug=False, use_supplementary=False, supplementary_only=False, supp_models=None):
+def _run_prediction_once(fasta_file, threshold, output_csv, project_output, cpu=None, predict_mode="fast", debug=False, use_supplementary=False, supplementary_only=False, supp_models=None):
     cmd = _build_prediction_command(
         fasta_file=fasta_file,
         threshold=threshold,
         output_csv=output_csv,
         project_output=project_output,
+        cpu=cpu,
         predict_mode=predict_mode,
         debug=debug,
         use_supplementary=use_supplementary,
@@ -1086,11 +1116,11 @@ def _run_prediction_once(fasta_file, threshold, output_csv, project_output, pred
     if result.stdout:
         print(result.stdout)
 
-def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0, classification_mode="score", predict_mode="fast", interproscan_path=None, use_supplementary=False, supplementary_only=False, supp_models=None, run_protein_kinase_analysis=False):
+def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, cpu=None, debug=False, score_threshold=1.0, classification_mode="score", predict_mode="fast", interproscan_path=None, use_supplementary=False, supplementary_only=False, supp_models=None, run_protein_kinase_analysis=True):
     thresholds = [None, 0.1, 0.3, 0.5, 0.7, 0.9]
 
     fasta_basename = Path(fasta_file).stem
-    output_base = Path(output) if output else (SCRIPT_DIR / "output")
+    output_base = Path(output) if output else setup_project_output(fasta_file)
     output_base.mkdir(parents=True, exist_ok=True)
 
     outputs = {}
@@ -1117,6 +1147,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
         threshold=0.1,
         output_csv=base_prediction_csv,
         project_output=cache_output,
+        cpu=cpu,
         predict_mode=predict_mode,
         debug=debug,
         use_supplementary=use_supplementary,
@@ -1132,6 +1163,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
         pk_success = run_protein_kinase_step(
             cache_context,
             processed_fasta,
+            cpu=cpu,
             enabled=True,
             debug=debug,
             step_number=None,
@@ -1155,6 +1187,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
                 analysis_fasta=context.processed_fasta,
                 use_predicted=False,
                 appl_list=appl_list,
+                cpu=cpu,
                 debug=debug,
                 score_threshold=score_threshold,
                 classification_mode=classification_mode,
@@ -1196,6 +1229,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
             analysis_fasta=tf_fasta_path,
             use_predicted=True,
             appl_list=appl_list,
+            cpu=cpu,
             debug=debug,
             score_threshold=score_threshold,
             classification_mode=classification_mode,
@@ -1211,7 +1245,7 @@ def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, 
 
 # InterProScan functionality
 
-def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=None):
+def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=None, cpu=None):
     try:
         _ = interproscan_path
         if not ensure_db_extracted():
@@ -1238,7 +1272,17 @@ def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=N
                 "Java runtime not found. Install Java 11+ or place a JDK under .local-jdk/",
             )
              
-        cmd = [interproscan_script, '-i', fasta_file, '-f', 'json', '-d', str(ipr_output_dir)]
+        cmd = [
+            interproscan_script,
+            '-i',
+            fasta_file,
+            '-f',
+            'json',
+            '-d',
+            str(ipr_output_dir),
+            '-cpu',
+            str(resolve_cpu_count(cpu, stage_label="InterProScan")),
+        ]
         
         if appl_list:
             cmd.extend(['-appl', appl_list])
@@ -1257,7 +1301,7 @@ def run_interproscan(fasta_file, output_dir, appl_list=None, interproscan_path=N
         return False
 
 # Run hmmscan
-def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
+def run_hmmscan(fasta_file, output_dir, interproscan_path=None, cpu=None):
     try:
         _ = interproscan_path
         if not ensure_db_extracted():
@@ -1296,6 +1340,8 @@ def run_hmmscan(fasta_file, output_dir, interproscan_path=None):
         output_file = hmmscan_output_dir / "result.tbl"
         cmd = [
             hmmscan_executable,
+            "--cpu",
+            str(resolve_cpu_count(cpu, stage_label="hmmscan")),
             "--tblout", str(output_file),
             "--noali",
             str(hmm_db),
@@ -1326,6 +1372,7 @@ def preprocess_input_sequences(context):
 def run_tf_prediction_step(
     context,
     threshold,
+    cpu=None,
     predict_mode="fast",
     debug=False,
     use_supplementary=False,
@@ -1341,6 +1388,7 @@ def run_tf_prediction_step(
         threshold=threshold,
         output_csv=context.prediction_csv,
         project_output=context.project_output,
+        cpu=cpu,
         predict_mode=predict_mode,
         debug=debug,
         use_supplementary=use_supplementary,
@@ -1392,13 +1440,14 @@ def extract_predicted_tf_sequences_step(context, processed_fasta, threshold, ste
     return Path(tf_fasta)
 
 
-def run_protein_kinase_step(context, fasta_file, enabled=True, debug=False, step_number=None):
+def run_protein_kinase_step(context, fasta_file, cpu=None, enabled=True, debug=False, step_number=None):
     print(f"{_format_step_heading(step_number, 'Running protein kinase analysis')}...")
 
     step_start_time = time.time()
     success = _run_protein_kinase_analysis(
         fasta_file,
         context.project_output,
+        cpu=resolve_cpu_count(cpu, stage_label="Protein kinase"),
         enabled=enabled,
         debug=debug,
     )
@@ -1410,11 +1459,11 @@ def run_protein_kinase_step(context, fasta_file, enabled=True, debug=False, step
     return success
 
 
-def run_interproscan_step(context, fasta_file, appl_list=None, interproscan_path=None, step_number=None):
+def run_interproscan_step(context, fasta_file, appl_list=None, interproscan_path=None, cpu=None, step_number=None):
     print(f"{_format_step_heading(step_number, 'Running InterProScan')}...")
 
     step_start_time = time.time()
-    success = run_interproscan(str(fasta_file), str(context.project_output), appl_list, interproscan_path)
+    success = run_interproscan(str(fasta_file), str(context.project_output), appl_list, interproscan_path, cpu=cpu)
     step_duration = time.time() - step_start_time
 
     if success:
@@ -1425,11 +1474,11 @@ def run_interproscan_step(context, fasta_file, appl_list=None, interproscan_path
     return success
 
 
-def run_hmmscan_step(context, fasta_file, interproscan_path=None, step_number=None):
+def run_hmmscan_step(context, fasta_file, interproscan_path=None, cpu=None, step_number=None):
     print(f"{_format_step_heading(step_number, 'Running hmmscan')}...")
 
     step_start_time = time.time()
-    success = run_hmmscan(str(fasta_file), str(context.project_output), interproscan_path)
+    success = run_hmmscan(str(fasta_file), str(context.project_output), interproscan_path, cpu=cpu)
     step_duration = time.time() - step_start_time
 
     if success:
@@ -1473,6 +1522,7 @@ def run_tf_tr_analysis_pipeline(
     analysis_fasta,
     use_predicted,
     appl_list=None,
+    cpu=None,
     debug=False,
     score_threshold=1.0,
     classification_mode="specific",
@@ -1489,6 +1539,7 @@ def run_tf_tr_analysis_pipeline(
             analysis_fasta,
             appl_list=appl_list,
             interproscan_path=interproscan_path,
+            cpu=cpu,
             step_number=interproscan_step,
         ):
             return False
@@ -1498,6 +1549,7 @@ def run_tf_tr_analysis_pipeline(
             context,
             analysis_fasta,
             interproscan_path=interproscan_path,
+            cpu=cpu,
             step_number=hmmscan_step,
         ):
             return False
@@ -1559,7 +1611,7 @@ def write_empty_tf_tr_outputs_step(context, debug=False, step_number=None):
 # Full prediction workflow
 def predict_transcription_factors(threshold, fasta_file, output=None, extract_sequences=True, 
                                 run_interproscan_analysis=True, run_hmmscan_analysis=True, 
-                                appl_list=None, debug=False, score_threshold=1.0, classification_mode='specific',
+                                appl_list=None, cpu=None, debug=False, score_threshold=1.0, classification_mode='specific',
                                 predict_mode='fast', grad_cam_mode='none', interproscan_path=None,
                                 use_supplementary=False, supplementary_only=False, supp_models=None,
                                 run_protein_kinase_analysis=True):
@@ -1580,6 +1632,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print(f"Input file: {fasta_file}")
         print(f"Output directory: {project_output}")
         print(f"Prediction threshold: {threshold}")
+        print(f"CPU threads: {resolve_cpu_count(cpu, stage_label='Pipeline')}")
         print(f"Prediction mode: {predict_mode}")
         if grad_cam_mode != 'none':
             print(f"Grad-CAM: enabled (mode: {grad_cam_mode})")
@@ -1588,6 +1641,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         prediction_csv = run_tf_prediction_step(
             context,
             threshold=threshold,
+            cpu=cpu,
             predict_mode=predict_mode,
             debug=debug,
             use_supplementary=use_supplementary,
@@ -1610,6 +1664,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         pk_success = run_protein_kinase_step(
             context,
             processed_fasta,
+            cpu=cpu,
             enabled=run_protein_kinase_analysis,
             debug=debug,
             step_number=3,
@@ -1635,6 +1690,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                 analysis_fasta=tf_fasta,
                 use_predicted=True,
                 appl_list=appl_list,
+                cpu=cpu,
                 debug=debug,
                 score_threshold=score_threshold,
                 classification_mode=classification_mode,
@@ -1675,6 +1731,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
                     threshold=threshold,
                     output_csv=temp_pred_csv,
                     project_output=project_output,
+                    cpu=cpu,
                     predict_mode=predict_mode,
                     debug=debug,
                     use_supplementary=use_supplementary,
@@ -1722,7 +1779,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
         print(f"Error during prediction workflow: {e}")
         return False
 # Direct analysis mode (no prediction)
-def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=False, score_threshold=1.0, classification_mode='specific', interproscan_path=None, run_protein_kinase_analysis=True):
+def analyze_sequences_directly(fasta_file, output=None, appl_list=None, cpu=None, debug=False, score_threshold=1.0, classification_mode='specific', interproscan_path=None, run_protein_kinase_analysis=True):
     # Record start time
     analysis_start_time = time.time()
     
@@ -1739,12 +1796,14 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
         print("\n=== Starting Sequence Analysis ===\n")
         print(f"Input file: {fasta_file}")
         print(f"Output directory: {project_output}")
+        print(f"CPU threads: {resolve_cpu_count(cpu, stage_label='Pipeline')}")
         
         processed_fasta = preprocess_input_sequences(context)
 
         pk_success = run_protein_kinase_step(
             context,
             processed_fasta,
+            cpu=cpu,
             enabled=run_protein_kinase_analysis,
             debug=debug,
             step_number=1,
@@ -1757,6 +1816,7 @@ def analyze_sequences_directly(fasta_file, output=None, appl_list=None, debug=Fa
             analysis_fasta=processed_fasta,
             use_predicted=False,
             appl_list=appl_list,
+            cpu=cpu,
             debug=debug,
             score_threshold=score_threshold,
             classification_mode=classification_mode,
@@ -1901,116 +1961,97 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="itak",
-        description="iTAK3 - transcription factor prediction-first analysis tool",
+        description=(
+            "iTAK3 - analyze protein or nucleotide FASTA files for TF/TR and protein kinase results.\n"
+            "Default behavior: run the prediction-first workflow, then complete downstream classification."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example usage:
-  # 1) Default workflow: predictive prefilter, then downstream analysis
+  # 1) Run the standard workflow on an input FASTA
   itak -i input.fasta
 
-  # 2) Direct fallback: disable the predictive prefilter
+  # 2) Disable the predictive prefilter and analyze all eligible sequences directly
   itak --no-predict -i input.fasta
 
-  # 3) Specify an output directory (default: output/<input_basename>/)
+  # 3) Write results to a specific output directory
   itak -i input.fasta -o /path/to/output
 
-  # 4) Restrict InterProScan applications (run only selected libraries)
-  itak -i input.fasta --appl CDD,Pfam,SMART
+  # 4) Use more CPU threads, capped at the system limit
+  itak -i input.fasta --cpu 8
 
-  # 5) Adjust InterProScan score filtering (retain only hits with score >= threshold)
-  itak -i input.fasta --score 1.0
+  # 5) Raise or lower the TF/TR prediction cutoff
+  itak -i input.fasta --threshold 0.7
 
-  # 6) Classification policy: specific (specificity-first) or score (score-first, default)
-  itak -i input.fasta --classification-mode specific
-
-  # 7) Prediction splitting mode: fast (default) or full (more comprehensive, slower)
-  itak -i input.fasta --predict-mode full
-
-  # 8) Use supplementary models (stacked with main model, or supplementary-only)
-  itak --use-supplementary -i input.fasta
-  itak --supplementary-only -i input.fasta
-  itak --use-supplementary --supp-models a.pth b.pth -i input.fasta
-
-  # 9) Grad-CAM heatmaps (available in the default workflow or with --no-predict)
-  itak --grad-cam-mode fast -i input.fasta
-  itak --grad-cam-mode all -i input.fasta
-
-  # 10) Test mode: skip InterProScan/hmmscan and validate classification using existing files
-  itak -test -i input.fasta -json ipr_result.json -spechmm hmmscan_result.tbl
-
-  # 11) Check dependencies and exit
+  # 6) Check whether the runtime is ready before analysis
   itak --check-deps
 
-  # 12) Show CLI version
+  # 7) Show CLI version
   itak --version
         """
     )
     
     # Primary parameters
     parser.add_argument('--version', action='version', version=f'%(prog)s {APP_VERSION}')
-    parser.add_argument('-i', '--input', help='Path to input FASTA file')
-    parser.add_argument('-t', '--threshold', type=validate_threshold, default=0.1, 
-                       help='Prediction threshold in [0, 1] (default: 0.1)')
-    parser.add_argument('-o', '--output', help='Output directory path')
+    parser.add_argument('-i', '--input', help='Input FASTA file. Protein FASTA is preferred; nucleotide FASTA is also accepted and will be converted into protein sequences by ORF extraction when possible.')
+    parser.add_argument('--cpu', type=validate_cpu_count, help='CPU threads for prediction, InterProScan, and hmmscan. Values above the system limit are capped automatically.')
+    parser.add_argument('-t', '--threshold', type=validate_threshold, default=0.5, 
+                       help='TF/TR prediction cutoff in [0, 1]. Higher values are stricter; default: 0.5.')
+    parser.add_argument('-o', '--output', help='Directory for all result files. Default: <input_basename>_output in the current working directory.')
     
     # Feature options
-    parser.add_argument('--predict', action='store_true', 
-                       help='Legacy alias for the default predictive workflow')
     parser.add_argument('--no-predict', action='store_true',
-                       help='Disable the default predictive prefilter and analyze all eligible sequences directly')
+                       help='Turn off the default prediction-first acceleration step and run direct analysis on all eligible sequences.')
     parser.add_argument('--list-predict', action='store_true',
-                       help='Predict once, then classify under multiple thresholds to produce multiple outputs')
+                       help=argparse.SUPPRESS)
     # parser.add_argument('--extract-sequences', action='store_true', default=True, 
     #                    help='Extract predicted TF sequences (only with --predict)')
     
     # Test mode parameters
     parser.add_argument('-test', '--test-mode', action='store_true',
-                       help='Enable test mode (skip InterProScan/hmmscan and validate classification using specified files)')
+                       help=argparse.SUPPRESS)
     parser.add_argument('-json', '--json-file', 
-                       help='InterProScan JSON result file path for test mode (only with -test)')
+                       help=argparse.SUPPRESS)
     parser.add_argument('-spechmm', '--spechmm-file',
-                       help='hmmscan result file path for test mode (only with -test)')
+                       help=argparse.SUPPRESS)
     
     # InterProScan applications
     parser.add_argument('--appl', type=validate_appl_list,
                        default='CDD,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART',
-                       help='InterProScan application list (comma-separated). Allowed: CDD,NCBIfam,PANTHER,Pfam,PROSITEPATTERNS,PROSITEPROFILES,SMART')
+                       help=argparse.SUPPRESS)
     
-    parser.add_argument('--skip-pk', action='store_true',
-                       help='Skip protein kinase identification/classification (enabled by default)')
-
     # Debug mode
     parser.add_argument('--debug', action='store_true', default=False,
-                       help='Enable debug mode and write intermediate artifacts (default: off)')
+                       help=argparse.SUPPRESS)
     
     # Score threshold
     parser.add_argument('--score', type=float, default=1.0,
-                       help='Score threshold for domain-hit filtering; apply to both InterProScan and hmmscan-derived hits (default: 1.0)')
+                       help=argparse.SUPPRESS)
     
     # Classification mode
     parser.add_argument('--classification-mode', choices=['specific', 'score'], default='score',
-                       help="Classification mode: 'specific' (specificity-first) or 'score' (score-first, default)")
+                       help=argparse.SUPPRESS)
     
     # Prediction splitting mode
     parser.add_argument('--predict-mode', choices=['fast', 'full'], default='fast',
-                       help="Predictive prefilter splitting mode: 'fast' (default) or 'full' (full coverage)")
+                       help=argparse.SUPPRESS)
     # Supplementary model options
     parser.add_argument('--use-supplementary', action='store_true',
-                       help='Enable supplementary models for an additional prediction pass (default: off)')
+                       help=argparse.SUPPRESS)
     parser.add_argument('--supplementary-only', action='store_true',
-                       help='Use supplementary models only; skip the main model')
+                       help=argparse.SUPPRESS)
     parser.add_argument('--supp-models', nargs='*', default=None,
-                       help='Optional: specify supplementary model path(s); if omitted, use all models in the directory')
+                       help=argparse.SUPPRESS)
     
     # Grad-CAM options
     parser.add_argument('--grad-cam-mode', choices=['none', 'all', 'positive', 'fast'], default='none',
-                       help='Grad-CAM mode: none (default), all, positive (thresholded), fast')
+                       help=argparse.SUPPRESS)
 
     # Dependency checks
     parser.add_argument('--check-deps', action='store_true',
-                       help='Check dependencies and exit')
+                       help='Check whether Python packages, bundled databases, and external tools are ready, then exit.')
     parser.add_argument('--skip-deps-check', action='store_true',
-                       help='Skip dependency checks and run anyway (not recommended)')
+                       help=argparse.SUPPRESS)
     
     args = parser.parse_args()
 
@@ -2031,10 +2072,6 @@ Example usage:
             print("Error: dependency checker module is unavailable")
             sys.exit(1)
 
-    if args.predict and args.no_predict:
-        print("Error: --predict and --no-predict cannot be used together")
-        sys.exit(1)
-    
     # Run dependency checks (unless explicitly skipped)
     if not args.skip_deps_check and DependencyChecker:
         print(" Checking runtime dependencies...")
@@ -2102,9 +2139,6 @@ Example usage:
         
     # Validate test mode arguments
     if args.test_mode:
-        if args.predict:
-            print("Error: --predict is not meaningful in test mode (-test)")
-            sys.exit(1)
         if args.no_predict:
             print("Error: --no-predict is not meaningful in test mode (-test)")
             sys.exit(1)
@@ -2223,6 +2257,7 @@ Example usage:
             fasta_file=args.input,
             output=args.output,
             appl_list=args.appl,
+            cpu=args.cpu,
             debug=args.debug,
             score_threshold=args.score,
             classification_mode=args.classification_mode,
@@ -2231,7 +2266,7 @@ Example usage:
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
             supp_models=args.supp_models,
-            run_protein_kinase_analysis=not args.skip_pk,
+            run_protein_kinase_analysis=True,
         )
     elif use_predict_workflow:
         print(f"Using default predictive workflow; threshold: {args.threshold}")
@@ -2259,6 +2294,7 @@ Example usage:
             threshold=args.threshold,
             fasta_file=args.input,
             output=args.output,
+            cpu=args.cpu,
             extract_sequences=True,  # Must be True because this step is required
             run_interproscan_analysis=True,  # Enabled by default
             run_hmmscan_analysis=True,       # Enabled by default
@@ -2272,7 +2308,7 @@ Example usage:
             use_supplementary=args.use_supplementary,
             supplementary_only=args.supplementary_only,
             supp_models=args.supp_models,
-            run_protein_kinase_analysis=not args.skip_pk,
+            run_protein_kinase_analysis=True,
         )
     else:
         print("Using direct fallback mode (--no-predict)")
@@ -2292,11 +2328,12 @@ Example usage:
             fasta_file=args.input,
             output=args.output,
             appl_list=args.appl,
+            cpu=args.cpu,
             debug=args.debug,
             score_threshold=args.score,
             classification_mode=args.classification_mode,
             interproscan_path=None,
-            run_protein_kinase_analysis=not args.skip_pk,
+            run_protein_kinase_analysis=True,
         )
         
         # If analysis succeeds and Grad-CAM is enabled, run predict.py to generate heatmaps

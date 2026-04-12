@@ -13,10 +13,10 @@ iTAK currently provides:
 - bundled InterProScan-based domain annotation
 - repository-local and managed-environment execution through a single CLI
 
-## Meaning Of `--predict`
+## Predictive Workflow
 
-`--predict` should be understood as a prefilter acceleration mode, not as a second independent
-analysis system.
+The predictive workflow should be understood as a prefilter acceleration mode, not as a second
+independent analysis system.
 
 The current intended design is:
 
@@ -29,8 +29,21 @@ So the deep-learning predictor is a front-end filter for the main analysis pipel
 to reduce the amount of expensive downstream scanning, not to replace the rule-based
 classification logic.
 
-`--predict` remains accepted as a legacy-compatible spelling of the default behavior, but it no
-longer changes the execution mode.
+There is no user-facing `--predict` switch anymore because prediction-first execution is already
+the default behavior. The explicit user-facing override is:
+
+- `--no-predict`
+
+`--list-predict` is retained only as a developer regression hook and is intentionally hidden from
+normal user help.
+
+Most development-oriented parameters are intentionally hidden from normal `itak --help`.
+They remain available for regression testing, rule debugging, and model research, but they are not
+part of the ordinary user interface contract.
+
+The user-facing CLI now includes a unified `--cpu` parameter. It applies one CPU-thread setting
+across prediction, InterProScan, and hmmscan, and values above the machine limit are capped
+automatically.
 
 ## Official Entrypoint
 

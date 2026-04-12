@@ -6,6 +6,7 @@ SUITE="quick"
 LABEL=""
 OUTPUT_ROOT=""
 APPL_LIST="PROSITEPROFILES"
+CPU_COUNT=""
 
 usage() {
   cat <<'EOF'
@@ -15,6 +16,7 @@ Options:
   --suite NAME       quick (default) or full
   --label NAME       Label appended to output directory names
   --output-root DIR  Base directory for generated test outputs
+  --cpu N            CPU threads forwarded to smoke_test.sh and itak
   --appl LIST        InterProScan application list (default: PROSITEPROFILES)
   --help             Show this help message
 
@@ -24,6 +26,7 @@ Suites:
 
 Examples:
   ./checkpoint_test.sh
+  ./checkpoint_test.sh --cpu 8
   ./checkpoint_test.sh --suite full
   ./checkpoint_test.sh --suite full --label cp1_context
 EOF
@@ -41,6 +44,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --output-root)
       OUTPUT_ROOT="$2"
+      shift 2
+      ;;
+    --cpu)
+      CPU_COUNT="$2"
       shift 2
       ;;
     --appl)
@@ -81,6 +88,11 @@ elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
   ITAK_CMD=("$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/itak")
 else
   ITAK_CMD=("python3" "$ROOT_DIR/itak")
+fi
+
+CPU_ARGS=()
+if [[ -n "$CPU_COUNT" ]]; then
+  CPU_ARGS=(--cpu "$CPU_COUNT")
 fi
 
 run_step() {
@@ -142,6 +154,7 @@ run_step "Syntax Check" python -m py_compile \
 run_step "Default Predict Baseline" \
   "$ROOT_DIR/smoke_test.sh" \
   --input "$ROOT_DIR/test_protein.fasta" \
+  "${CPU_ARGS[@]}" \
   --appl "$APPL_LIST" \
   --require-pk 2 \
   --output "$OUTPUT_ROOT/default_predict"
@@ -150,6 +163,7 @@ run_step "Direct Fallback PK Positive" \
   "$ROOT_DIR/smoke_test.sh" \
   --no-predict \
   --input "$ROOT_DIR/test_protein.fasta" \
+  "${CPU_ARGS[@]}" \
   --appl "$APPL_LIST" \
   --require-pk 2 \
   --output "$OUTPUT_ROOT/direct_no_predict_pk_positive"
@@ -167,12 +181,14 @@ if [[ "$SUITE" == "full" ]]; then
   run_step "Default Predict PK Positive" \
     "$ROOT_DIR/smoke_test.sh" \
     --input "$ROOT_DIR/test_protein.fasta" \
+    "${CPU_ARGS[@]}" \
     --appl "$APPL_LIST" \
     --require-pk 2 \
     --output "$OUTPUT_ROOT/predict_pk_positive"
 
   run_step "Predict PK Positive Without TF" \
     "${ITAK_CMD[@]}" \
+    "${CPU_ARGS[@]}" \
     -t 0.3 \
     -i "$PK_NO_TF_FASTA" \
     --appl "$APPL_LIST" \
@@ -194,6 +210,7 @@ if [[ "$SUITE" == "full" ]]; then
 
   run_step "List Predict PK Contract" \
     "${ITAK_CMD[@]}" \
+    "${CPU_ARGS[@]}" \
     --list-predict \
     -i "$PK_NO_TF_FASTA" \
     --appl "$APPL_LIST" \
@@ -227,6 +244,7 @@ if [[ "$SUITE" == "full" ]]; then
 
   run_step "Debug PK Positive" \
     "${ITAK_CMD[@]}" \
+    "${CPU_ARGS[@]}" \
     -i "$ROOT_DIR/test_protein.fasta" \
     --appl "$APPL_LIST" \
     --debug \

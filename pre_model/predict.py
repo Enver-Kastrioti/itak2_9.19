@@ -36,6 +36,28 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'Microsoft YaHe
 plt.rcParams['axes.unicode_minus'] = False
 
 
+def get_available_cpu_count():
+    return max(1, os.cpu_count() or 1)
+
+
+def resolve_cpu_count(requested_cpu=None):
+    available = get_available_cpu_count()
+    if requested_cpu is None:
+        return min(4, available)
+    return max(1, min(int(requested_cpu), available))
+
+
+def configure_cpu_runtime(cpu, device):
+    if device.type != 'cpu':
+        return
+    torch.set_num_threads(cpu)
+    if hasattr(torch, "set_num_interop_threads"):
+        try:
+            torch.set_num_interop_threads(max(1, min(cpu, get_available_cpu_count())))
+        except RuntimeError:
+            pass
+
+
 
 # ---------------------------------------------------------
 # Grad-CAM implementation
@@ -430,7 +452,7 @@ def get_sequence_fragments(sequence, window_size=1000, step_size=200, mode='fast
             
     return fragments
 
-def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_length=1000, batch_size=16, sequences=None, mode='fast', grad_cam_mode='none', grad_cam_output_dir=None, use_supplementary=False, supplementary_only=False, supp_model_paths=None, progress_every=0):
+def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.5, max_length=1000, batch_size=16, sequences=None, mode='fast', grad_cam_mode='none', grad_cam_output_dir=None, use_supplementary=False, supplementary_only=False, supp_model_paths=None, progress_every=0, cpu=None):
     if sequences is None:
         print(f"\nProcessing file: {fasta_file}")
         sequences = parse_fasta(fasta_file)
@@ -566,7 +588,7 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_l
     # We only initialize it if Grad-CAM is actually enabled AND not in fast mode (which runs later)
     plot_executor = None
     if grad_cam and grad_cam_mode != 'fast':
-        plot_executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
+        plot_executor = concurrent.futures.ProcessPoolExecutor(max_workers=resolve_cpu_count(cpu))
         
     # List to store TFs for fast mode (post-processing)
     fast_mode_tasks = []
@@ -757,7 +779,7 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.1, max_l
         print(f"Starting Fast Mode Grad-CAM generation for {len(fast_mode_tasks)} TF sequences...")
         
         # We can use ProcessPoolExecutor for plotting here as well
-        plot_executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
+        plot_executor = concurrent.futures.ProcessPoolExecutor(max_workers=resolve_cpu_count(cpu))
         
         try:
             for i, best_pred in enumerate(fast_mode_tasks):
@@ -924,12 +946,14 @@ def main():
     parser.add_argument('--model', type=str, 
                         default=default_model_path,
                         help=f'Model file path (default: {default_model_path})')
-    parser.add_argument('--threshold', type=float, default=0.1,
-                       help='TF prediction threshold (default: 0.1, i.e., 10%%)')
+    parser.add_argument('--threshold', type=float, default=0.5,
+                       help='TF prediction threshold (default: 0.5, i.e., 50%%)')
     parser.add_argument('--output', type=str, default=None,
                        help='Output CSV file path (default: auto-generated based on input filename)')
     parser.add_argument('--batch_size', type=int, default=16,
                        help='Batch size (default: 16)')
+    parser.add_argument('--cpu', type=int, default=None,
+                       help='CPU threads to use. Values above the system limit are capped automatically.')
     parser.add_argument('--device', type=str, choices=['auto', 'cpu', 'cuda', 'mps'], default='auto',
                        help='Execution device. auto preserves the legacy behavior (cuda if available, else cpu).')
     parser.add_argument('--progress-every', type=int, default=0,
@@ -984,7 +1008,12 @@ def main():
     except RuntimeError as exc:
         print(f"Error: {exc}")
         return
+    cpu = resolve_cpu_count(args.cpu)
+    if args.cpu is not None and cpu != args.cpu:
+        print(f"[WARN] Requested CPU count {args.cpu} exceeds available CPU threads {get_available_cpu_count()}; using {cpu} instead")
+    configure_cpu_runtime(cpu, device)
     print(f"Using device: {device}")
+    print(f"CPU threads: {cpu}")
     
     # Load model
     if args.supplementary_only:
@@ -1032,6 +1061,7 @@ def main():
             supplementary_only=args.supplementary_only,
             supp_model_paths=args.supp_models,
             progress_every=args.progress_every,
+            cpu=cpu,
         )
     except Exception:
         predictions, tf_headers = predict_fasta(
@@ -1048,6 +1078,7 @@ def main():
             supplementary_only=args.supplementary_only,
             supp_model_paths=args.supp_models,
             progress_every=args.progress_every,
+            cpu=cpu,
         )
     
     if predictions:

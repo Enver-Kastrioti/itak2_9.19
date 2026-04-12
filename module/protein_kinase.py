@@ -251,7 +251,9 @@ def _ensure_pk_database():
 def run_protein_kinase_pipeline(fasta_file, project_output, cpu=None, debug=False):
     _ensure_pk_database()
     hmmscan_bin = _resolve_hmmscan_executable()
-    cpu = cpu or min(4, os.cpu_count() or 1)
+    available_cpu = max(1, os.cpu_count() or 1)
+    cpu = cpu or min(4, available_cpu)
+    cpu = max(1, min(cpu, available_cpu))
 
     project_output = Path(project_output)
     pk_output_dir = project_output / "protein_kinase"

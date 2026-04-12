@@ -10,7 +10,7 @@
   - PPC classification
   - subclass refinement for WNK1 and MAK groups
 - Added bundled protein kinase database assets under `db/hmm_pk/`.
-- Added positive protein kinase smoke-test coverage for both direct mode and `--predict` mode.
+- Added positive protein kinase smoke-test coverage for both the default predictive mode and the direct fallback mode.
 - Added optional combined result summary output: `result/all_match_tbl.txt` in `--debug` mode.
 
 ### Changed
@@ -31,7 +31,12 @@
 - Collapsed Python dependency files into a single `requirements.txt` and aligned `pixi.toml` with the default predictive runtime.
 - Merged the main bundled test sample into a mixed TF/TR/PK fixture so default smoke and checkpoint runs better match real proteome-style inputs.
 - Removed extra checked-in test FASTA files; targeted regression subsets are now generated from the single mixed sample at runtime.
-- Added `--skip-pk` to disable protein kinase analysis when needed.
+- Removed the user-facing `--predict` and `--skip-pk` switches; prediction is now always the default entry path and protein kinase classification always runs.
+- Hid `--list-predict` from normal CLI help and documentation while retaining it for developer regression coverage.
+- Changed the default output directory naming to `<input_basename>_output` in the current working directory.
+- Raised the default prediction threshold from `0.1` to `0.5`.
+- Added a unified user-facing `--cpu` parameter and wired it through prediction, InterProScan, hmmscan, and protein kinase classification, with automatic capping at the machine CPU-thread limit.
+- Updated `smoke_test.sh` and `checkpoint_test.sh` to accept `--cpu` and forward it to `itak`.
 - Consolidated project documentation under `docs/`, added a canonical current-design document, and moved transitional planning notes into `docs/archive/`.
 - Moved the TF/TR self-build HMM database into `db/hmm_self_build/` and renamed the protein kinase HMM bundle directory to `db/hmm_pk/`.
 - Simplified protein kinase outputs to avoid duplicate files:
@@ -63,6 +68,9 @@
 - `pixi run runtime-status`
 - `pixi run configure-runtime`
 - `pixi run runtime-check`
+- `pixi run -- ./itak --cpu 999 -t 0.3 -i output/checkpoints/cli_surface_cleanup/generated_fixtures/test_pk_no_tf_candidate.fasta --appl PROSITEPROFILES -o output/cpu_cap_predict_check`
+- `pixi run -- ./itak --no-predict --cpu 999 -i output/checkpoints/cli_surface_cleanup/generated_fixtures/test_pk_no_tf_candidate.fasta --appl PROSITEPROFILES -o output/cpu_cap_direct_check`
+- `bash -n smoke_test.sh checkpoint_test.sh`
 
 ### Relevant commits
 - `2e10ea3` Add protein kinase classification workflow

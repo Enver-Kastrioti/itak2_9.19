@@ -7,6 +7,7 @@ OUTPUT_DIR="$ROOT_DIR/output/smoke_test"
 APPL_LIST="PROSITEPROFILES"
 RUN_PREDICT=1
 REQUIRE_PK_COUNT=""
+CPU_COUNT=""
 
 usage() {
   cat <<'EOF'
@@ -14,9 +15,9 @@ Usage: ./smoke_test.sh [options]
 
 Options:
   --no-predict        Disable the default predictive prefilter and analyze all sequences directly
-  --predict           Legacy alias for the default predictive workflow
   --input PATH        Input FASTA file (default: test_protein.fasta)
   --output PATH       Output directory (default: output/smoke_test)
+  --cpu N             CPU threads forwarded to itak
   --appl LIST         InterProScan applications (default: PROSITEPROFILES)
   --require-pk N      Require at least N protein kinase classifications
   --help              Show this help message
@@ -24,6 +25,7 @@ Options:
 Examples:
   ./smoke_test.sh
   ./smoke_test.sh --no-predict
+  ./smoke_test.sh --cpu 8
   ./smoke_test.sh --require-pk 2
   ./smoke_test.sh --no-predict --require-pk 2
   ./smoke_test.sh --appl CDD,Pfam,SMART
@@ -36,16 +38,16 @@ while [[ $# -gt 0 ]]; do
       RUN_PREDICT=0
       shift
       ;;
-    --predict)
-      RUN_PREDICT=1
-      shift
-      ;;
     --input)
       INPUT_FASTA="$2"
       shift 2
       ;;
     --output)
       OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --cpu)
+      CPU_COUNT="$2"
       shift 2
       ;;
     --appl)
@@ -86,6 +88,9 @@ rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 ARGS=(-i "$INPUT_FASTA" --appl "$APPL_LIST" -o "$OUTPUT_DIR")
+if [[ -n "$CPU_COUNT" ]]; then
+  ARGS=(--cpu "$CPU_COUNT" "${ARGS[@]}")
+fi
 if [[ "$RUN_PREDICT" -eq 0 ]]; then
   ARGS=(--no-predict "${ARGS[@]}")
 fi
