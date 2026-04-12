@@ -45,6 +45,20 @@ The user-facing CLI now includes a unified `--cpu` parameter. It applies one CPU
 across prediction, InterProScan, and hmmscan, and values above the machine limit are capped
 automatically.
 
+For the prediction stage, `--cpu` is enforced at process startup before `torch` and BLAS-backed
+libraries are imported. On macOS, prediction currently uses the requested CPU budget for model
+inference threads and does not automatically spawn `DataLoader` worker processes, because the
+platform's `spawn` multiprocessing mode adds too much startup and memory overhead for the current
+predictor implementation.
+
+Protein FASTA preprocessing now tolerates stop-marker input from real proteomes:
+
+- trailing `*` characters are stripped from protein sequences
+- internal `*` characters are normalized to `X`
+
+This normalization happens before prediction and downstream domain tools so bundled workflows do
+not fail on common annotation-style protein FASTA files.
+
 ## Official Entrypoint
 
 The only official entrypoint is:

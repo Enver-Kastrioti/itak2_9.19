@@ -17,6 +17,7 @@ try:
         NUCLEOTIDE_ALPHABET,
         PROTEIN_ALPHABET,
         classify_input_sequence,
+        open_fasta_text,
         normalize_sequence,
         validate_protein_sequence,
     )
@@ -25,6 +26,7 @@ except ImportError:
         NUCLEOTIDE_ALPHABET,
         PROTEIN_ALPHABET,
         classify_input_sequence,
+        open_fasta_text,
         normalize_sequence,
         validate_protein_sequence,
     )
@@ -47,7 +49,8 @@ class FastaValidator:
     
     def validate_fasta_format(self, fasta_file):
         try:
-            sequences = list(SeqIO.parse(fasta_file, "fasta"))
+            with open_fasta_text(fasta_file, "rt") as handle:
+                sequences = list(SeqIO.parse(handle, "fasta"))
             if not sequences:
                 self.errors.append("The file contains no FASTA records")
                 return False
@@ -62,15 +65,13 @@ class FastaValidator:
     
     def validate_protein_sequences(self, fasta_file):
         try:
-            sequences = list(SeqIO.parse(fasta_file, "fasta"))
+            with open_fasta_text(fasta_file, "rt") as handle:
+                sequences = list(SeqIO.parse(handle, "fasta"))
             self.protein_count = 0
             self.nucleotide_count = 0
             
             for record in sequences:
                 seq_str = normalize_sequence(record.seq)
-                if "*" in seq_str:
-                    self.errors.append(f"Sequence {record.id} contains a disallowed character: *")
-                    continue
 
                 seq_type = classify_input_sequence(seq_str)
                 if seq_type == "empty":
@@ -99,15 +100,13 @@ class FastaValidator:
 
     def validate_input_sequences(self, fasta_file):
         try:
-            sequences = list(SeqIO.parse(fasta_file, "fasta"))
+            with open_fasta_text(fasta_file, "rt") as handle:
+                sequences = list(SeqIO.parse(handle, "fasta"))
             self.protein_count = 0
             self.nucleotide_count = 0
 
             for record in sequences:
                 seq_str = normalize_sequence(record.seq)
-                if "*" in seq_str:
-                    self.errors.append(f"Sequence {record.id} contains a disallowed character: *")
-                    continue
 
                 seq_type = classify_input_sequence(seq_str)
                 if seq_type == "protein":
@@ -156,9 +155,6 @@ class FastaValidator:
             self.nucleotide_count = 0
             for item in sequences:
                 seq_str = normalize_sequence(item if isinstance(item, str) else item.get('sequence', ''))
-                if '*' in seq_str:
-                    self.errors.append("Sequence contains a disallowed character: *")
-                    continue
                 if not seq_str:
                     self.errors.append("Empty sequence")
                     continue

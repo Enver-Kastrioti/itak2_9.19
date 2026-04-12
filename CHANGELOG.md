@@ -36,6 +36,8 @@
 - Changed the default output directory naming to `<input_basename>_output` in the current working directory.
 - Raised the default prediction threshold from `0.1` to `0.5`.
 - Added a unified user-facing `--cpu` parameter and wired it through prediction, InterProScan, hmmscan, and protein kinase classification, with automatic capping at the machine CPU-thread limit.
+- Tightened prediction CPU control in `pre_model/predict.py` so thread-related environment variables are set before importing `torch`/`numpy`, and vectorized the one-hot encoding path used during prediction.
+- On macOS, kept prediction in a single-process data-loading mode while still honoring `--cpu` for model inference threads; this avoids the heavy `spawn` overhead of automatic `DataLoader` workers on that platform.
 - Updated `smoke_test.sh` and `checkpoint_test.sh` to accept `--cpu` and forward it to `itak`.
 - Consolidated project documentation under `docs/`, added a canonical current-design document, and moved transitional planning notes into `docs/archive/`.
 - Moved the TF/TR self-build HMM database into `db/hmm_self_build/` and renamed the protein kinase HMM bundle directory to `db/hmm_pk/`.
@@ -47,7 +49,7 @@
   - `protein_kinase/match.json` in `--debug` mode
 - Applied `--score` filtering to both InterProScan-derived and hmmscan-derived hits.
 - Replaced blind six-frame translation of nucleotide inputs with complete-ORF extraction during preprocessing.
-- Enforced processed-FASTA validation so protein sequences containing `*` do not reach InterProScan.
+- Normalized protein FASTA stop markers during preprocessing by stripping trailing `*` and converting internal `*` to `X`, so real annotation-derived proteomes can pass through prediction and downstream tools.
 
 ### Verification
 - `./checkpoint_test.sh --suite quick`
@@ -70,6 +72,8 @@
 - `pixi run runtime-check`
 - `pixi run -- ./itak --cpu 999 -t 0.3 -i output/checkpoints/cli_surface_cleanup/generated_fixtures/test_pk_no_tf_candidate.fasta --appl PROSITEPROFILES -o output/cpu_cap_predict_check`
 - `pixi run -- ./itak --no-predict --cpu 999 -i output/checkpoints/cli_surface_cleanup/generated_fixtures/test_pk_no_tf_candidate.fasta --appl PROSITEPROFILES -o output/cpu_cap_direct_check`
+- `PYTHONUNBUFFERED=1 /usr/bin/time -p -o output/benchmarks/predict_100_cpu1.time pixi run -- python pre_model/predict.py --fasta output/benchmarks/dataset01_protein_first100.fa --threshold 0.5 --output output/benchmarks/predict_100_cpu1.csv --cpu 1 --progress-every 10`
+- `PYTHONUNBUFFERED=1 /usr/bin/time -p -o output/benchmarks/predict_100_cpu8.time pixi run -- python pre_model/predict.py --fasta output/benchmarks/dataset01_protein_first100.fa --threshold 0.5 --output output/benchmarks/predict_100_cpu8.csv --cpu 8 --progress-every 10`
 - `bash -n smoke_test.sh checkpoint_test.sh`
 
 ### Relevant commits

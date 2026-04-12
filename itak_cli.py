@@ -39,6 +39,13 @@ except ImportError:
     resolve_java_executable = None
 
 try:
+    from module.get_fasta import get_input_stem, open_fasta_text
+except ImportError:
+    print("Warning: Unable to import FASTA I/O helpers; gzip FASTA support may be limited")
+    get_input_stem = None
+    open_fasta_text = None
+
+try:
     from module.output_contracts import (
         build_tftr_match_record,
         load_pk_records_from_tsv,
@@ -78,6 +85,7 @@ INTERPROSCAN_SCRIPT = DB_DIR / "interproscan" / "interproscan.sh"
 @dataclass(frozen=True)
 class PipelineContext:
     input_fasta: Path
+    input_stem: str
     project_output: Path
     processed_fasta: Path
     preclass_dir: Path
@@ -110,7 +118,7 @@ class PipelineContext:
             if candidate.exists():
                 return candidate
 
-        original_json = self.interproscan_dir / f"{self.input_fasta.name}.json"
+        original_json = self.interproscan_dir / f"{self.input_stem}.json"
         if original_json.exists():
             return original_json
 
@@ -242,7 +250,7 @@ def resolve_cpu_count(requested_cpu=None, stage_label="requested"):
 
 
 def _default_output_dir_candidates(fasta_file):
-    stem = Path(fasta_file).stem
+    stem = get_input_stem(fasta_file) if get_input_stem else Path(fasta_file).stem
     base = Path.cwd() / f"{stem}_output"
     yield base
 
@@ -291,7 +299,8 @@ def _resolve_processed_fasta_path(fasta_file, project_output):
         module = _load_get_fasta_module()
         return Path(module.get_processed_fasta_path(str(fasta_file), project_output))
     except Exception:
-        return Path(project_output) / f"{Path(fasta_file).stem}_protein_replaced.fasta"
+        stem = get_input_stem(fasta_file) if get_input_stem else Path(fasta_file).stem
+        return Path(project_output) / f"{stem}_protein_replaced.fasta"
 
 
 def _validate_fasta_file(fasta_path, allow_nucleotide=True, stage="FASTA validation"):
@@ -351,6 +360,7 @@ def _ensure_processed_fasta(context):
 
 def build_pipeline_context(fasta_file, output=None, project_output=None):
     input_fasta = Path(fasta_file)
+    input_stem = get_input_stem(fasta_file) if get_input_stem else input_fasta.stem
     project_output = Path(project_output) if project_output else setup_project_output(str(input_fasta), output)
     processed_fasta = _resolve_processed_fasta_path(input_fasta, project_output)
     processed_stem = processed_fasta.stem
@@ -363,11 +373,12 @@ def build_pipeline_context(fasta_file, output=None, project_output=None):
 
     return PipelineContext(
         input_fasta=input_fasta,
+        input_stem=input_stem,
         project_output=project_output,
         processed_fasta=processed_fasta,
         preclass_dir=preclass_dir,
-        prediction_csv=preclass_dir / f"{input_fasta.stem}_prediction.csv",
-        prediction_tf_only_csv=preclass_dir / f"{input_fasta.stem}_prediction_tf_only.csv",
+        prediction_csv=preclass_dir / f"{input_stem}_prediction.csv",
+        prediction_tf_only_csv=preclass_dir / f"{input_stem}_prediction_tf_only.csv",
         tf_fasta=preclass_dir / f"{processed_stem}_tf_sequences.fasta",
         interproscan_dir=interproscan_dir,
         hmmscan_dir=hmmscan_dir,
@@ -484,7 +495,7 @@ def resolve_existing_project_output(fasta_file, output=None):
     if output:
         return Path(output)
 
-    stem = Path(fasta_file).stem
+    stem = get_input_stem(fasta_file) if get_input_stem else Path(fasta_file).stem
     base = Path.cwd() / f"{stem}_output"
     candidates = [
         p for p in base.parent.glob(f"{base.name}*")
@@ -894,13 +905,14 @@ def extract_tf_sequences_from_memory(fasta_file, tf_headers, output_dir):
             return None
         
         # Create output file path
-        fasta_basename = Path(fasta_file).stem
+        fasta_basename = get_input_stem(fasta_file) if get_input_stem else Path(fasta_file).stem
         output_fasta = Path(output_dir) / f"{fasta_basename}_tf_sequences.fasta"
         
         # Extract sequences
         extracted_count = 0
         with open(output_fasta, 'w') as output_handle:
-            with open(fasta_file, 'r') as input_handle:
+            opener = open_fasta_text if open_fasta_text else open
+            with opener(fasta_file, 'rt') as input_handle:
                 for record in SeqIO.parse(input_handle, "fasta"):
                     # Match by record ID or description
                     if record.id in tf_headers or record.description in tf_headers:
@@ -937,13 +949,14 @@ def extract_tf_sequences_from_csv(fasta_file, csv_file, output_dir, threshold):
             return None
         
         # Create output file path
-        fasta_basename = Path(fasta_file).stem
+        fasta_basename = get_input_stem(fasta_file) if get_input_stem else Path(fasta_file).stem
         output_fasta = Path(output_dir) / f"{fasta_basename}_tf_sequences.fasta"
         
         # Extract sequences
         extracted_count = 0
         with open(output_fasta, 'w') as output_handle:
-            with open(fasta_file, 'r') as input_handle:
+            opener = open_fasta_text if open_fasta_text else open
+            with opener(fasta_file, 'rt') as input_handle:
                 for record in SeqIO.parse(input_handle, "fasta"):
                     # Match by record ID or description
                     if record.id in tf_headers or record.description in tf_headers:
@@ -1037,7 +1050,8 @@ def _extract_sequences_by_headers(source_fasta, headers, output_fasta):
 
     extracted_count = 0
     with open(output_fasta, "w") as out_handle:
-        with open(source_fasta, "r") as in_handle:
+        opener = open_fasta_text if open_fasta_text else open
+        with opener(source_fasta, "rt") as in_handle:
             for record in SeqIO.parse(in_handle, "fasta"):
                 if record.id in headers_set or record.description in headers_set:
                     SeqIO.write(record, out_handle, "fasta")
@@ -1119,7 +1133,7 @@ def _run_prediction_once(fasta_file, threshold, output_csv, project_output, cpu=
 def list_predict_transcription_factors(fasta_file, output=None, appl_list=None, cpu=None, debug=False, score_threshold=1.0, classification_mode="score", predict_mode="fast", interproscan_path=None, use_supplementary=False, supplementary_only=False, supp_models=None, run_protein_kinase_analysis=True):
     thresholds = [None, 0.1, 0.3, 0.5, 0.7, 0.9]
 
-    fasta_basename = Path(fasta_file).stem
+    fasta_basename = get_input_stem(fasta_file) if get_input_stem else Path(fasta_file).stem
     output_base = Path(output) if output else setup_project_output(fasta_file)
     output_base.mkdir(parents=True, exist_ok=True)
 
@@ -1708,7 +1722,7 @@ def predict_transcription_factors(threshold, fasta_file, output=None, extract_se
             step_start_time = time.time()
             
             result_dir = project_output / "result"
-            input_stem = Path(fasta_file).stem
+            input_stem = get_input_stem(fasta_file) if get_input_stem else Path(fasta_file).stem
 
             target_fasta = None
             if grad_cam_mode == 'fast':

@@ -1,6 +1,7 @@
 import os
 import json
 import argparse
+import gzip
 from Bio import SeqIO
 from Bio.Seq import Seq
 
@@ -12,6 +13,34 @@ STOP_CODONS = {"TAA", "TAG", "TGA"}
 
 def normalize_sequence(seq):
     return "".join(str(seq).split()).upper()
+
+
+def strip_compression_suffix(path):
+    path = str(path)
+    if path.endswith(".gz"):
+        return path[:-3]
+    return path
+
+
+def get_input_stem(path):
+    return os.path.splitext(os.path.basename(strip_compression_suffix(path)))[0]
+
+
+def open_fasta_text(path, mode="rt", encoding="utf-8"):
+    path = str(path)
+    if "b" not in mode and encoding is None:
+        encoding = "utf-8"
+    if path.endswith(".gz"):
+        return gzip.open(path, mode, encoding=encoding)
+    return open(path, mode, encoding=encoding)
+
+
+def sanitize_protein_sequence(seq):
+    seq = normalize_sequence(seq)
+    if not seq:
+        return seq
+    seq = seq.rstrip("*")
+    return seq.replace("*", "X")
 
 
 def _has_terminal_stop(seq):
@@ -55,11 +84,9 @@ def classify_input_sequence(seq):
 
 
 def validate_protein_sequence(seq, record_id=None):
-    seq = normalize_sequence(seq)
+    seq = sanitize_protein_sequence(seq)
     if not seq:
         raise ValueError("is empty")
-    if "*" in seq:
-        raise ValueError("contains a disallowed character: *")
     invalid_non_letters = sorted({c for c in seq if not c.isalpha()})
     if invalid_non_letters:
         raise ValueError(f"contains unsupported characters: {', '.join(invalid_non_letters)}")
@@ -105,7 +132,7 @@ def _repo_root():
 def get_project_output_dir(fasta_file):
     root = _repo_root()
     output_base = os.path.join(root, "output")
-    base = os.path.splitext(os.path.basename(fasta_file))[0]
+    base = get_input_stem(fasta_file)
     if not os.path.exists(output_base):
         os.makedirs(output_base)
     candidates = []
@@ -134,7 +161,7 @@ def read_fasta_to_dict(fasta_file):
     fasta_dict = {}
     
     try:
-        with open(fasta_file, 'r') as handle:
+        with open_fasta_text(fasta_file, 'rt') as handle:
             for record in SeqIO.parse(handle, "fasta"):
                 # Use record.id as the key and the sequence as the value
                 fasta_dict[record.id] = str(record.seq)
@@ -206,7 +233,7 @@ def generate_classified_fasta(fasta_file, classification_result, output_file=Non
     try:
         # If output_file is not provided, generate a default path
         if not output_file:
-            input_name = os.path.splitext(os.path.basename(fasta_file))[0]
+            input_name = get_input_stem(fasta_file)
             if output_dir:
                 result_dir = output_dir
             else:
@@ -289,11 +316,9 @@ def _extract_translated_orfs(seq, table=1, min_orf_aa=30):
 def generate_protein_sequences_in_memory(fasta_file, genetic_code=1, min_orf_aa=30):
     try:
         sequences = []
-        with open(fasta_file, 'r') as handle:
+        with open_fasta_text(fasta_file, 'rt') as handle:
             for record in SeqIO.parse(handle, "fasta"):
                 seq = normalize_sequence(record.seq)
-                if "*" in seq:
-                    raise ValueError(f"Sequence {record.id} contains a disallowed character: *")
                 seq_type = classify_input_sequence(seq)
                 if seq_type == "nucleotide":
                     translated = _extract_translated_orfs(seq, table=genetic_code, min_orf_aa=min_orf_aa)
@@ -326,7 +351,7 @@ def format_tf_fasta_with_classification_from_mem(seqs_dict, classification_resul
         print(f"Error generating FASTA file (in-memory): {e}")
         return False
 def get_processed_fasta_path(fasta_file, output_dir=None):
-    input_name = os.path.splitext(os.path.basename(fasta_file))[0]
+    input_name = get_input_stem(fasta_file)
     project_dir = get_project_output_dir(fasta_file) if output_dir is None else output_dir
     # Previously: write into a "six_frame_translation" subdirectory.
     # Now: write directly under the project output directory.
@@ -342,12 +367,10 @@ def generate_protein_fasta_with_translation(fasta_file, output_file=None, output
         nucleotide_entries = 0
         skipped_nucleotide_entries = 0
 
-        with open(fasta_file, 'r') as handle, open(output_file, 'w') as out:
+        with open_fasta_text(fasta_file, 'rt') as handle, open(output_file, 'w') as out:
             for record in SeqIO.parse(handle, "fasta"):
                 total += 1
                 seq = normalize_sequence(record.seq)
-                if "*" in seq:
-                    raise ValueError(f"Sequence {record.id} contains a disallowed character: *")
                 seq_type = classify_input_sequence(seq)
 
                 if seq_type == "nucleotide":

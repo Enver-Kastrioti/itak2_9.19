@@ -14,10 +14,59 @@ import sys
 import argparse
 import concurrent.futures
 import hashlib
+import gzip
 
-# Solve MKL library conflict - must be set before importing torch
-os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
-os.environ['MKL_THREADING_LAYER'] = 'GNU'
+THREAD_ENV_VARS = (
+    'OMP_NUM_THREADS',
+    'MKL_NUM_THREADS',
+    'OPENBLAS_NUM_THREADS',
+    'NUMEXPR_NUM_THREADS',
+    'VECLIB_MAXIMUM_THREADS',
+)
+
+
+def get_available_cpu_count():
+    return max(1, os.cpu_count() or 1)
+
+
+def resolve_cpu_count(requested_cpu=None):
+    available = get_available_cpu_count()
+    if requested_cpu is None:
+        return min(4, available)
+    return max(1, min(int(requested_cpu), available))
+
+
+def parse_bootstrap_cpu(argv):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--cpu')
+    try:
+        args, _ = parser.parse_known_args(argv[1:])
+    except SystemExit:
+        return None
+
+    if args.cpu is None:
+        return None
+
+    try:
+        return int(args.cpu)
+    except (TypeError, ValueError):
+        return None
+
+
+def bootstrap_cpu_runtime(argv):
+    cpu = resolve_cpu_count(parse_bootstrap_cpu(argv))
+
+    # Solve MKL library conflict and constrain native thread pools before importing torch/numpy.
+    os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
+    os.environ['MKL_THREADING_LAYER'] = 'GNU'
+    for env_var in THREAD_ENV_VARS:
+        os.environ[env_var] = str(cpu)
+
+    return cpu
+
+
+BOOTSTRAP_CPU = bootstrap_cpu_runtime(sys.argv)
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -34,17 +83,6 @@ warnings.filterwarnings('ignore')
 # Configure fonts for CJK glyph rendering when available
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
-
-
-def get_available_cpu_count():
-    return max(1, os.cpu_count() or 1)
-
-
-def resolve_cpu_count(requested_cpu=None):
-    available = get_available_cpu_count()
-    if requested_cpu is None:
-        return min(4, available)
-    return max(1, min(int(requested_cpu), available))
 
 
 def configure_cpu_runtime(cpu, device):
@@ -193,6 +231,13 @@ def plot_gradcam(sequence, cam, title, save_path):
 AMINO_ACIDS = 'ACDEFGHIKLMNPQRSTVWY'
 aa_to_idx = {aa: idx for idx, aa in enumerate(AMINO_ACIDS)}
 aa_to_idx['X'] = len(AMINO_ACIDS)  # Unknown amino acid
+AA_LOOKUP = np.full(256, aa_to_idx['X'], dtype=np.uint8)
+for aa, idx in aa_to_idx.items():
+    AA_LOOKUP[ord(aa)] = idx
+    AA_LOOKUP[ord(aa.lower())] = idx
+ONEHOT_IDENTITY = np.eye(len(AMINO_ACIDS) + 1, dtype=np.float32)
+MIN_SEQUENCES_PER_WORKER_BATCH = 16
+MIN_SEQUENCES_FOR_PARALLEL_ENCODING = 256
 
 class OneHotLightweightCNN(nn.Module):
     """Multi-scale CNN model using One-Hot encoding
@@ -337,7 +382,8 @@ def parse_fasta(fasta_file):
     current_header = None
     current_sequence = ""
     
-    with open(fasta_file, 'r', encoding='utf-8') as f:
+    open_func = gzip.open if str(fasta_file).endswith('.gz') else open
+    with open_func(fasta_file, 'rt', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
             if line.startswith('>'):
@@ -363,53 +409,123 @@ def parse_fasta(fasta_file):
 
 def sequence_to_onehot(sequence, max_length=1000, vocab_size=21):
     """Convert amino acid sequence to one-hot encoding"""
-    # Initialize one-hot matrix
     onehot = np.zeros((max_length, vocab_size), dtype=np.float32)
-    
-    # Encode sequence
-    for i, aa in enumerate(sequence[:max_length]):
-        aa_idx = aa_to_idx.get(aa, aa_to_idx['X'])
-        onehot[i, aa_idx] = 1.0
-    
-    # For sequences shorter than max_length, remaining positions stay zero (padding)
+    sequence_length = min(len(sequence), max_length)
+    if sequence_length == 0:
+        return onehot
+
+    sequence_bytes = sequence[:sequence_length].encode('ascii', errors='replace')
+    aa_indices = AA_LOOKUP[np.frombuffer(sequence_bytes, dtype=np.uint8)]
+    onehot[:sequence_length] = ONEHOT_IDENTITY[aa_indices]
     return onehot
 
-def predict_sequences_batch(model, sequences, device, max_length=1000, batch_size=16, progress_every=0):
+class SequencePredictionDataset(Dataset):
+    """Lazy dataset that encodes protein sequences on demand."""
+
+    def __init__(self, sequences, max_length=1000, vocab_size=21):
+        self.sequences = sequences
+        self.max_length = max_length
+        self.vocab_size = vocab_size
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, index):
+        seq_data = self.sequences[index]
+        return {
+            'header': seq_data['header'],
+            'sequence': seq_data['sequence'],
+            'onehot': sequence_to_onehot(
+                seq_data['sequence'],
+                max_length=self.max_length,
+                vocab_size=self.vocab_size,
+            ),
+        }
+
+
+def collate_prediction_batch(batch_items):
+    encoded_batch = np.stack([item['onehot'] for item in batch_items], axis=0)
+    return {
+        'headers': [item['header'] for item in batch_items],
+        'sequences': [item['sequence'] for item in batch_items],
+        'encoded_batch': torch.from_numpy(encoded_batch),
+    }
+
+
+def resolve_prediction_worker_count(cpu, device, sequence_count, batch_size):
+    cpu_budget = resolve_cpu_count(cpu)
+    if cpu_budget <= 1:
+        return 0
+    if sys.platform == 'darwin':
+        return 0
+    if sequence_count < max(MIN_SEQUENCES_FOR_PARALLEL_ENCODING, batch_size * MIN_SEQUENCES_PER_WORKER_BATCH):
+        return 0
+    if device.type == 'cpu':
+        return min(4, max(0, cpu_budget // 2))
+    return min(4, max(0, cpu_budget - 1))
+
+
+def resolve_inference_cpu_threads(cpu, device, worker_count):
+    cpu_budget = resolve_cpu_count(cpu)
+    if device.type != 'cpu':
+        return cpu_budget
+    return max(1, cpu_budget - worker_count)
+
+
+def build_prediction_dataloader(sequences, max_length, batch_size, cpu, device):
+    worker_count = resolve_prediction_worker_count(cpu, device, len(sequences), batch_size)
+    dataset = SequencePredictionDataset(sequences, max_length=max_length, vocab_size=21)
+    loader_kwargs = {
+        'dataset': dataset,
+        'batch_size': batch_size,
+        'shuffle': False,
+        'num_workers': worker_count,
+        'collate_fn': collate_prediction_batch,
+        'pin_memory': device.type == 'cuda',
+    }
+    if worker_count > 0:
+        loader_kwargs['persistent_workers'] = True
+        loader_kwargs['prefetch_factor'] = 2
+    return DataLoader(**loader_kwargs), worker_count
+
+
+def predict_sequences_batch(model, sequences, device, max_length=1000, batch_size=16, progress_every=0, cpu=None):
     """Batch predict sequences"""
     model.eval()
     all_predictions = []
     total_batches = (len(sequences) + batch_size - 1) // batch_size if batch_size else 0
-    
-    with torch.no_grad():
-        for i in range(0, len(sequences), batch_size):
-            batch_sequences = sequences[i:i+batch_size]
-            batch_index = (i // batch_size) + 1
+    data_loader, worker_count = build_prediction_dataloader(
+        sequences,
+        max_length=max_length,
+        batch_size=batch_size,
+        cpu=cpu,
+        device=device,
+    )
+    inference_threads = resolve_inference_cpu_threads(cpu, device, worker_count)
+    configure_cpu_runtime(inference_threads, device)
+
+    if progress_every:
+        print(f"[Prediction] Data workers: {worker_count}; model CPU threads: {inference_threads}")
+
+    with torch.inference_mode():
+        for batch_index, batch in enumerate(data_loader, start=1):
+            batch_sequences = list(zip(batch['headers'], batch['sequences']))
             if progress_every and (batch_index == 1 or batch_index % progress_every == 0 or batch_index == total_batches):
                 print(f"[Prediction] Batch {batch_index}/{total_batches} ({len(batch_sequences)} sequences)")
-            
-            # Encode sequences as One-Hot
-            encoded_batch = []
-            for seq_data in batch_sequences:
-                onehot_encoded = sequence_to_onehot(seq_data['sequence'], max_length)
-                encoded_batch.append(onehot_encoded)
-            
-            # Convert to tensor
-            batch_tensor = torch.tensor(np.stack(encoded_batch), dtype=torch.float).to(device)
-            
-            # Predict
+
+            batch_tensor = batch['encoded_batch'].to(device=device, dtype=torch.float32, non_blocking=device.type == 'cuda')
             outputs = model(batch_tensor)
             probabilities = torch.softmax(outputs, dim=1)
-            
-            # Extract probabilities
-            for j, seq_data in enumerate(batch_sequences):
+
+            for j, (header, sequence) in enumerate(batch_sequences):
                 non_tf_prob = probabilities[j][0].item()
                 tf_prob = probabilities[j][1].item()
-                
+
                 all_predictions.append({
-                    'header': seq_data['header'],
+                    'header': header,
                     'tf_probability': tf_prob,
                     'non_tf_probability': non_tf_prob,
-                    'sequence': seq_data['sequence'] # Add sequence for Grad-CAM
+                    'sequence': sequence,
                 })
     
     return all_predictions
@@ -535,7 +651,15 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.5, max_l
                 model_supp.load_state_dict(torch.load(model_path, map_location=device))
                 model_supp.to(device)
                 model_supp.eval()
-                preds = predict_sequences_batch(model_supp, expanded_sequences, device, max_length, batch_size, progress_every=progress_every)
+                preds = predict_sequences_batch(
+                    model_supp,
+                    expanded_sequences,
+                    device,
+                    max_length,
+                    batch_size,
+                    progress_every=progress_every,
+                    cpu=cpu,
+                )
                 for i, pred in enumerate(preds):
                     tfp = pred['tf_probability']
                     nfp = pred['non_tf_probability']
@@ -574,7 +698,15 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.5, max_l
             return [], []
  
     # Predict on all fragments (main model)
-    raw_predictions = predict_sequences_batch(model, expanded_sequences, device, max_length, batch_size, progress_every=progress_every)
+    raw_predictions = predict_sequences_batch(
+        model,
+        expanded_sequences,
+        device,
+        max_length,
+        batch_size,
+        progress_every=progress_every,
+        cpu=cpu,
+    )
     
     results = []
     tf_headers = []
@@ -678,7 +810,15 @@ def predict_fasta(fasta_file=None, model=None, device=None, threshold=0.5, max_l
                         model_supp.load_state_dict(torch.load(model_path, map_location=device))
                         model_supp.to(device)
                         model_supp.eval()
-                        supp_preds = predict_sequences_batch(model_supp, supp_fragments, device, max_length, batch_size, progress_every=progress_every)
+                        supp_preds = predict_sequences_batch(
+                            model_supp,
+                            supp_fragments,
+                            device,
+                            max_length,
+                            batch_size,
+                            progress_every=progress_every,
+                            cpu=cpu,
+                        )
                         for i_pred, pred in enumerate(supp_preds):
                             tfp = pred['tf_probability']
                             nfp = pred['non_tf_probability']
@@ -919,7 +1059,10 @@ def _repo_root():
 def get_project_output_dir(fasta_file):
     root = _repo_root()
     output_base = os.path.join(root, "output")
-    base = os.path.splitext(os.path.basename(fasta_file))[0]
+    fasta_name = os.path.basename(str(fasta_file))
+    if fasta_name.endswith('.gz'):
+        fasta_name = fasta_name[:-3]
+    base = os.path.splitext(fasta_name)[0]
     if not os.path.exists(output_base):
         os.makedirs(output_base)
     candidates = []
@@ -998,7 +1141,10 @@ def main():
     
     # Generate output filename
     if args.output is None:
-        base_name = os.path.splitext(os.path.basename(args.fasta))[0]
+        fasta_name = os.path.basename(args.fasta)
+        if fasta_name.endswith('.gz'):
+            fasta_name = fasta_name[:-3]
+        base_name = os.path.splitext(fasta_name)[0]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         args.output = f"{base_name}_predictions_{timestamp}.csv"
     
@@ -1008,7 +1154,7 @@ def main():
     except RuntimeError as exc:
         print(f"Error: {exc}")
         return
-    cpu = resolve_cpu_count(args.cpu)
+    cpu = BOOTSTRAP_CPU if args.cpu is None else resolve_cpu_count(args.cpu)
     if args.cpu is not None and cpu != args.cpu:
         print(f"[WARN] Requested CPU count {args.cpu} exceeds available CPU threads {get_available_cpu_count()}; using {cpu} instead")
     configure_cpu_runtime(cpu, device)
@@ -1021,7 +1167,10 @@ def main():
     else:
         model, max_length = load_model(args.model, device)
     
-    input_name = os.path.splitext(os.path.basename(args.fasta))[0]
+    fasta_name = os.path.basename(args.fasta)
+    if fasta_name.endswith('.gz'):
+        fasta_name = fasta_name[:-3]
+    input_name = os.path.splitext(fasta_name)[0]
 
     # Determine Grad-CAM output directory
     grad_cam_dir = None
