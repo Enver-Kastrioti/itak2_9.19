@@ -70,9 +70,7 @@ itak3/
 ├── requirements.txt
 ├── smoke_test.sh
 ├── checkpoint_test.sh
-├── test_protein.fasta
-├── test_protein_kinase.fasta
-└── test_pk_no_tf_candidate.fasta
+└── test_protein.fasta
 ```
 
 ## Installation
@@ -204,6 +202,9 @@ Repository-local usage:
 itak -i test_protein.fasta
 ```
 
+`test_protein.fasta` is the only bundled test FASTA. It is a mixed sample containing TF/TR, PK,
+and non-regulatory proteins together.
+
 ### Default workflow with an explicit threshold
 
 ```bash
@@ -260,7 +261,7 @@ itak --check-deps
 ```bash
 ./smoke_test.sh
 ./smoke_test.sh --no-predict
-./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
+./smoke_test.sh --require-pk 2
 ./checkpoint_test.sh --suite quick
 ./checkpoint_test.sh --suite full
 ```

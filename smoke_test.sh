@@ -24,8 +24,8 @@ Options:
 Examples:
   ./smoke_test.sh
   ./smoke_test.sh --no-predict
-  ./smoke_test.sh --input test_protein_kinase.fasta --require-pk 2
-  ./smoke_test.sh --no-predict --input test_protein_kinase.fasta --require-pk 2
+  ./smoke_test.sh --require-pk 2
+  ./smoke_test.sh --no-predict --require-pk 2
   ./smoke_test.sh --appl CDD,Pfam,SMART
 EOF
 }

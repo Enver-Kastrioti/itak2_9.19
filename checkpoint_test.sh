@@ -94,6 +94,35 @@ run_step() {
   "$@"
 }
 
+extract_fasta_subset() {
+  local input_fasta="$1"
+  local output_fasta="$2"
+  shift 2
+
+  awk -v ids="$(printf '%s\n' "$@")" '
+    BEGIN {
+      split(ids, raw_ids, "\n")
+      for (i in raw_ids) {
+        if (raw_ids[i] != "") {
+          keep[raw_ids[i]] = 1
+        }
+      }
+    }
+    /^>/ {
+      header = substr($0, 2)
+      emit = (header in keep)
+    }
+    emit {
+      print
+    }
+  ' "$input_fasta" > "$output_fasta"
+
+  if [[ ! -s "$output_fasta" ]]; then
+    echo "Failed to generate FASTA subset: $output_fasta" >&2
+    exit 1
+  fi
+}
+
 check_file() {
   local path="$1"
   if [[ ! -e "$path" ]]; then
@@ -114,20 +143,30 @@ run_step "Default Predict Baseline" \
   "$ROOT_DIR/smoke_test.sh" \
   --input "$ROOT_DIR/test_protein.fasta" \
   --appl "$APPL_LIST" \
+  --require-pk 2 \
   --output "$OUTPUT_ROOT/default_predict"
 
 run_step "Direct Fallback PK Positive" \
   "$ROOT_DIR/smoke_test.sh" \
   --no-predict \
-  --input "$ROOT_DIR/test_protein_kinase.fasta" \
+  --input "$ROOT_DIR/test_protein.fasta" \
   --appl "$APPL_LIST" \
   --require-pk 2 \
   --output "$OUTPUT_ROOT/direct_no_predict_pk_positive"
 
 if [[ "$SUITE" == "full" ]]; then
+  FIXTURE_DIR="$OUTPUT_ROOT/generated_fixtures"
+  mkdir -p "$FIXTURE_DIR"
+
+  PK_NO_TF_FASTA="$FIXTURE_DIR/test_pk_no_tf_candidate.fasta"
+  extract_fasta_subset \
+    "$ROOT_DIR/test_protein.fasta" \
+    "$PK_NO_TF_FASTA" \
+    "AT1G01450.1"
+
   run_step "Default Predict PK Positive" \
     "$ROOT_DIR/smoke_test.sh" \
-    --input "$ROOT_DIR/test_protein_kinase.fasta" \
+    --input "$ROOT_DIR/test_protein.fasta" \
     --appl "$APPL_LIST" \
     --require-pk 2 \
     --output "$OUTPUT_ROOT/predict_pk_positive"
@@ -135,7 +174,7 @@ if [[ "$SUITE" == "full" ]]; then
   run_step "Predict PK Positive Without TF" \
     "${ITAK_CMD[@]}" \
     -t 0.3 \
-    -i "$ROOT_DIR/test_pk_no_tf_candidate.fasta" \
+    -i "$PK_NO_TF_FASTA" \
     --appl "$APPL_LIST" \
     -o "$OUTPUT_ROOT/predict_pk_no_tf"
 
@@ -156,7 +195,7 @@ if [[ "$SUITE" == "full" ]]; then
   run_step "List Predict PK Contract" \
     "${ITAK_CMD[@]}" \
     --list-predict \
-    -i "$ROOT_DIR/test_pk_no_tf_candidate.fasta" \
+    -i "$PK_NO_TF_FASTA" \
     --appl "$APPL_LIST" \
     -o "$OUTPUT_ROOT/list_predict_contract"
 
@@ -188,7 +227,7 @@ if [[ "$SUITE" == "full" ]]; then
 
   run_step "Debug PK Positive" \
     "${ITAK_CMD[@]}" \
-    -i "$ROOT_DIR/test_protein_kinase.fasta" \
+    -i "$ROOT_DIR/test_protein.fasta" \
     --appl "$APPL_LIST" \
     --debug \
     -o "$OUTPUT_ROOT/debug_pk_positive"
